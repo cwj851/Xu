@@ -28,7 +28,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="4dp"
-            android:text="核心功能逐个对接中，点击卡片查看状态"
+            android:text="愿你始终保持好奇心，也始终拥有选择的自由"
             android:textColor="@color/neo_text_hint"
             android:textSize="12sp" />
 

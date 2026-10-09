@@ -34,6 +34,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import java.io.RandomAccessFile
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.surexu.sesame.R
 import com.surexu.sesame.data.AppConfig
@@ -92,6 +94,8 @@ class NeoMainActivity : AppCompatActivity() {
         const val LOG_MAX_TAIL_BYTES = 1024 * 1024L
         /** 日志查看时最多展示的条目数 */
         const val LOG_MAX_ENTRIES = 500
+        /** 单次渲染最多生成的日志卡片数（超出只显示最新部分，避免一次性 inflate 过多导致卡顿） */
+        const val LOG_MAX_RENDER = 300
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -107,7 +111,10 @@ class NeoMainActivity : AppCompatActivity() {
         super.attachBaseContext(ctx)
     }
 
-    private lateinit var pages: List<View>
+    /** 四个页面容器：懒加载（首次切到该页才 inflate），避免冷启动四页全量 inflate 拖慢首帧。 */
+    private val pages = arrayOfNulls<View>(4)
+    private val pageInited = BooleanArray(4)
+    private lateinit var contentFrame: FrameLayout
     private lateinit var navItems: List<LinearLayout>
     private lateinit var navIcons: List<ImageView>
     private lateinit var navLabels: List<TextView>
@@ -132,14 +139,13 @@ class NeoMainActivity : AppCompatActivity() {
         setContentView(R.layout.neo_activity_main)
         setupSystemBars()
 
-        val content = findViewById<FrameLayout>(R.id.neo_content)
-        pages = listOf(
-            layoutInflater.inflate(R.layout.neo_page_home, content, false),
-            layoutInflater.inflate(R.layout.neo_page_features, content, false),
-            layoutInflater.inflate(R.layout.neo_page_logs, content, false),
-            layoutInflater.inflate(R.layout.neo_page_settings, content, false),
-        )
-        pages.forEach { content.addView(it) }
+        contentFrame = findViewById<FrameLayout>(R.id.neo_content)
+        // 首帧只 inflate 首页；功能/日志/设置页首次切到时再懒加载（见 ensurePageLoaded），
+        // 避免冷启动四页全量 inflate + 各页列表构建同步阻塞首帧
+        val homePage = layoutInflater.inflate(R.layout.neo_page_home, contentFrame, false)
+        pages[0] = homePage
+        contentFrame.addView(homePage)
+        pageInited[0] = true
 
         navItems = listOf(
             findViewById(R.id.neo_nav_home),
@@ -167,11 +173,8 @@ class NeoMainActivity : AppCompatActivity() {
             }
         }
 
+        // 首页立即绑定（监听器+本地一言，轻量）；功能/日志/设置页列表构建改到各自页首次懒加载时执行
         bindHomeActions()
-        buildFeatureGrid()
-        bindLogsActions()
-        bindSettingsActions()
-        refreshSettingsAccountButton()
 
         // 激活状态：初始化运行类型快照并监听变化（模块版逻辑，独立版同样可被注入后广播通知）
         ViewAppInfo.init(applicationContext)
@@ -203,8 +206,8 @@ class NeoMainActivity : AppCompatActivity() {
             sendRunTypeQueryBroadcast()
             runTypeProbeHandler.postDelayed(runTypeProbeRunnable, RUN_TYPE_PROBE_INTERVAL_MS)
         }
-        // 从账号配置页返回后刷新右上角账号按钮
-        refreshSettingsAccountButton()
+        // 从账号配置页返回后刷新右上角账号按钮（设置页尚未懒加载时跳过，避免空指针）
+        if (pageInited[3]) refreshSettingsAccountButton()
         // 系统界面设置可能已变更：即时应用悬浮底栏并刷新设置页副标题
         applyFloatNav()
         updateSystemSettingSub()
@@ -247,8 +250,9 @@ class NeoMainActivity : AppCompatActivity() {
         val activeColor = ContextCompat.getColor(this, R.color.neo_primary)
         val idleColor = ContextCompat.getColor(this, R.color.neo_text_hint)
 
-        pages.forEachIndexed { i, page ->
-            page.visibility = if (i == index) View.VISIBLE else View.GONE
+        ensurePageLoaded(index)
+        for (i in 0 until 4) {
+            pages[i]?.visibility = if (i == index) View.VISIBLE else View.GONE
         }
         navItems.forEachIndexed { i, item ->
             item.isSelected = i == index
@@ -256,8 +260,35 @@ class NeoMainActivity : AppCompatActivity() {
             navIcons[i].setColorFilter(color)
             navLabels[i].setTextColor(color)
         }
-        // 日志页常驻自动刷新：切到日志页启动，离开停止
-        if (index == 2) startLogAutoRefresh() else stopLogAutoRefresh()
+        // 日志页常驻自动刷新：切到日志页先懒加载首屏日志再启动，离开停止
+        if (index == 2) {
+            ensureLogsLoaded()
+            startLogAutoRefresh()
+        } else {
+            stopLogAutoRefresh()
+        }
+    }
+
+    /** 懒加载：页面首次显示时 inflate 并构建列表内容（避免冷启动四页全量 inflate 拖慢首帧）。 */
+    private fun ensurePageLoaded(index: Int) {
+        if (pageInited[index]) return
+        val page = when (index) {
+            1 -> layoutInflater.inflate(R.layout.neo_page_features, contentFrame, false)
+            2 -> layoutInflater.inflate(R.layout.neo_page_logs, contentFrame, false)
+            3 -> layoutInflater.inflate(R.layout.neo_page_settings, contentFrame, false)
+            else -> return
+        }
+        pages[index] = page
+        contentFrame.addView(page)
+        pageInited[index] = true
+        when (index) {
+            1 -> buildFeatureGrid()
+            2 -> bindLogsActions()
+            3 -> {
+                bindSettingsActions()
+                refreshSettingsAccountButton()
+            }
+        }
     }
 
     private fun bindHomeActions() {
@@ -331,10 +362,29 @@ class NeoMainActivity : AppCompatActivity() {
         }
     }
 
+    /** 能量统计首次读盘标记：避免冷启动首帧被 statistics.json 读盘+格式化写盘阻塞。 */
+    private val statsLoadedOnce = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** 首页能量统计卡：总量/今年/本月/今日 × 收取/帮收/浇水，数据来自 Statistics 快照。 */
     private fun bindEnergyStats() {
-        // 独立 App 进程不随支付宝注入，先读磁盘 statistics.json 再填充（模块内由 ApplicationHook 负责 load）
-        Statistics.load()
+        // 独立 App 进程不随支付宝注入，需读磁盘 statistics.json；
+        // 首次改后台线程读盘，回主线程填充，首帧只展示内存快照（未加载时为 0 占位）。
+        // 后续 onResume / 30s 定时 / update 广播直接走内存快照填充，不再阻塞主线程。
+        if (statsLoadedOnce.compareAndSet(false, true)) {
+            Thread {
+                try {
+                    Statistics.load()
+                } catch (th: Throwable) {
+                    // 读盘失败时保留占位值
+                }
+                runOnUiThread { fillEnergyStats() }
+            }.start()
+        } else {
+            fillEnergyStats()
+        }
+    }
+
+    private fun fillEnergyStats() {
         fun fill(id: Int, tt: Statistics.TimeType, dt: Statistics.DataType) {
             findViewById<TextView>(id).text = String.format("%,d", Statistics.getData(tt, dt))
         }
@@ -494,18 +544,15 @@ class NeoMainActivity : AppCompatActivity() {
                 tab.isSelected = true
                 updateLogTabStyle(tab)
                 currentLogTag = name
-                lastLogStamp = null
                 hideLogSearchBar()
-                logEntries = loadLogEntries(logFileFor(name))
-                renderLogEntries()
+                asyncLoadLogEntries(name, true)
             }
             tabs.add(tab)
             tabBar.addView(tab)
         }
 
-        // 首次进入：加载默认分类（森林）当日日志
-        logEntries = loadLogEntries(logFileFor(currentLogTag))
-        renderLogEntries()
+        // 首次进入不再预读日志：改为切到日志页时 ensureLogsLoaded() 懒加载，
+        // 避免启动即解析 1MB 日志拖慢首屏
 
         // 搜索：显示搜索栏并聚焦输入
         findViewById<View>(R.id.neo_logs_search_btn).setOnClickListener {
@@ -526,9 +573,8 @@ class NeoMainActivity : AppCompatActivity() {
         // 刷新：重新读取当前分类日志文件
         findViewById<View>(R.id.neo_logs_refresh_btn).setOnClickListener {
             haptic(it)
-            logEntries = loadLogEntries(logFileFor(currentLogTag))
-            lastLogStamp = logFileStamp(logFileFor(currentLogTag))
-            renderLogEntries()
+            logCache.remove(currentLogTag)
+            asyncLoadLogEntries(currentLogTag, true)
             Toast.makeText(this, "已刷新", Toast.LENGTH_SHORT).show()
         }
 
@@ -537,6 +583,13 @@ class NeoMainActivity : AppCompatActivity() {
             haptic(it)
             showLogMoreDialog()
         }
+    }
+
+    /** 日志页懒加载：仅首次切入日志页时读盘解析并渲染，后续直接复用。 */
+    private fun ensureLogsLoaded() {
+        if (logsLoaded) return
+        logsLoaded = true
+        asyncLoadLogEntries(currentLogTag, true)
     }
 
     /** 日志分类标签选中态：选中为主色软底药丸，未选中为透明底灰色文字。 */
@@ -551,6 +604,9 @@ class NeoMainActivity : AppCompatActivity() {
     }
 
     private val logTabs = listOf("森林", "庄园", "其他", "记录", "错误", "调试", "运行")
+
+    /** 日志页是否已完成首次加载：切到日志页时才读盘解析，避免启动即读 1MB 日志 */
+    private var logsLoaded = false
 
     // ==================== 日志页数据对接（读取/解析/渲染，逻辑与旧版模块 UI 日志页对齐） ====================
 
@@ -669,8 +725,9 @@ class NeoMainActivity : AppCompatActivity() {
         }
     }
 
-    /** 按当前分类 + 搜索词渲染日志列表；空结果显示空态卡。 */
-    private fun renderLogEntries() {
+    /** 按当前分类 + 搜索词渲染日志列表；空结果显示空态卡。
+     *  @param scrollToBottom 渲染完成后是否滚动到最新日志（切分类/首次进入/手动刷新为 true，自动刷新保持当前位置） */
+    private fun renderLogEntries(scrollToBottom: Boolean = false) {
         val list = findViewById<LinearLayout>(R.id.neo_logs_list)
         val empty = findViewById<View>(R.id.neo_logs_empty)
         val query = findViewById<EditText>(R.id.neo_logs_search_input).text.toString().trim()
@@ -687,7 +744,9 @@ class NeoMainActivity : AppCompatActivity() {
         }
         empty.visibility = View.GONE
         list.visibility = View.VISIBLE
-        filtered.forEach { entry ->
+        // 数据多时只渲染最新 LOG_MAX_RENDER 条，避免一次性 inflate 过多 View 卡顿
+        val toRender = if (filtered.size > LOG_MAX_RENDER) filtered.takeLast(LOG_MAX_RENDER) else filtered
+        toRender.forEach { entry ->
             val card = layoutInflater.inflate(R.layout.neo_item_log_entry, list, false)
             card.findViewById<TextView>(R.id.entry_tag).text = entry.tag ?: "日志"
             card.findViewById<TextView>(R.id.entry_time).text = entry.time ?: ""
@@ -700,6 +759,10 @@ class NeoMainActivity : AppCompatActivity() {
             card.setOnClickListener { copyLogEntry(entry) }
             card.findViewById<View>(R.id.entry_copy).setOnClickListener { copyLogEntry(entry) }
             list.addView(card)
+        }
+        if (scrollToBottom) {
+            val scroll = findViewById<ScrollView>(R.id.neo_logs_scroll)
+            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
         }
     }
 
@@ -737,9 +800,43 @@ class NeoMainActivity : AppCompatActivity() {
         if (stamp == null || stamp == lastLogStamp) {
             return
         }
+        asyncLoadLogEntries(currentLogTag)
+    }
+
+    /** 单条日志缓存：文件签名 + 解析结果，文件未变化时切换分类直接复用，避免重复读盘解析。 */
+    private data class CachedLog(val stamp: LogFileStamp?, val entries: List<NeoLogEntry>)
+
+    private val logParseExecutor = Executors.newSingleThreadExecutor()
+    private val logTaskSeq = AtomicInteger(0)
+    private val logCache = HashMap<String, CachedLog>()
+
+    /** 异步加载指定分类日志：缓存未变化直接复用（秒开）；变化则后台读盘解析，结果回主线程渲染。
+     *  @param scrollToBottom 渲染后是否滚动到最新日志 */
+    private fun asyncLoadLogEntries(tag: String, scrollToBottom: Boolean = false) {
+        val file = logFileFor(tag)
+        val stamp = logFileStamp(file)
+        val cached = logCache[tag]
+        if (cached != null && cached.stamp == stamp) {
+            logEntries = cached.entries
+            lastLogStamp = stamp
+            renderLogEntries(scrollToBottom)
+            return
+        }
+        // 乐观更新签名，防止自动刷新每秒重复发起同一文件的解析
         lastLogStamp = stamp
-        logEntries = loadLogEntries(file)
-        renderLogEntries()
+        val seq = logTaskSeq.incrementAndGet()
+        logParseExecutor.execute {
+            val entries = loadLogEntries(file)
+            val newStamp = logFileStamp(file)
+            logCache[tag] = CachedLog(newStamp, entries)
+            runOnUiThread {
+                // 页面已销毁或用户已切换其他分类/发起了更新任务，丢弃过期结果避免覆盖
+                if (isDestroyed || isFinishing || logTaskSeq.get() != seq) return@runOnUiThread
+                logEntries = entries
+                lastLogStamp = newStamp
+                renderLogEntries(scrollToBottom)
+            }
+        }
     }
 
     private fun showLogSearchBar() {
@@ -856,6 +953,11 @@ class NeoMainActivity : AppCompatActivity() {
                     "关于" -> startActivity(Intent(this, NeoAboutActivity::class.java))
                     "系统界面" -> startActivity(Intent(this, NeoSystemActivity::class.java))
                     "服务" -> startActivity(Intent(this, NeoServiceActivity::class.java))
+                    "服务器地址" -> Toast.makeText(
+                        this,
+                        "你好，陌生人，很高兴你来了，也许你现在无法打开这里，但求知，好奇和思考从来不该被一道网络的墙定义。",
+                        Toast.LENGTH_LONG
+                    ).show()
                     else -> Toast.makeText(this, "${setting.name}：功能对接中", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -976,39 +1078,10 @@ class NeoMainActivity : AppCompatActivity() {
         "?"
     }
 
-    /** 不可清理的保留文件：配置 / token / 账号索引 / 用户数据 / 统计。 */
-    private val PROTECTED_CACHE_NAMES = setOf(
-        "config_v2.json", "config_v2.prev.json", "token_config.json", "accountIndex.json",
-        "self.json", "friend.json", "cooperation.json", "status.json", "runtimeInfo.json",
-        "statistics.json"
-    )
-
-    /** 收集 Sure-Xu 数据目录下可安全清理的缓存文件（log 目录 + 任务/榜单缓存 json），排除配置与用户数据。 */
+    /** 收集可安全清理的缓存文件：仅 App 私有 cache 目录（几十KB级手机缓存）。
+     *  不触碰外部媒体目录 Sure-Xu/ 下的日志、配置、token、备份与账号业务数据。 */
     private fun cacheFiles(): List<File> {
-        val main = FileUtil.MAIN_DIRECTORY_FILE
-        if (!main.exists()) return emptyList()
-        val result = mutableListOf<File>()
-        main.listFiles()?.forEach { f ->
-            when {
-                f.isDirectory -> {
-                    // log 目录整体可清；config/、bak/ 等保留
-                    if (f.name == "log") result.add(f)
-                }
-                f.isFile && f.name.endsWith(".json") && f.name !in PROTECTED_CACHE_NAMES ->
-                    result.add(f)
-            }
-        }
-        // 各用户子目录下的榜单缓存 json（保留 self/friend/cooperation/status/runtimeInfo 等账号数据）
-        FileUtil.CONFIG_DIRECTORY_FILE.listFiles()?.forEach { userDir ->
-            if (userDir.isDirectory) {
-                userDir.listFiles()?.forEach { f ->
-                    if (f.isFile && f.name.endsWith(".json") && f.name !in PROTECTED_CACHE_NAMES) {
-                        result.add(f)
-                    }
-                }
-            }
-        }
-        return result
+        return cacheDir.listFiles()?.toList() ?: emptyList()
     }
 
     private fun cacheSizeText(): String {
@@ -1031,10 +1104,8 @@ class NeoMainActivity : AppCompatActivity() {
 
     private fun clearAppCache() {
         try {
-            // 清理 Sure-Xu 数据目录下的可清理缓存（log + 任务/榜单缓存 json），保留配置/token/备份/账号数据
+            // 仅清理 App 私有 cache 目录（几十KB级手机缓存），保留外部媒体目录中的日志/配置/账号等业务数据
             cacheFiles().forEach { it.deleteRecursively() }
-            filesDir.listFiles()?.forEach { it.deleteRecursively() }
-            cacheDir.listFiles()?.forEach { it.deleteRecursively() }
             updateCacheSizeSub()
         } catch (e: Exception) {
             // 忽略清理失败

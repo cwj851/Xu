@@ -140,7 +140,7 @@ class NeoSystemActivity : AppCompatActivity() {
             checked = AppConfig.INSTANCE.showToast ?: true,
             onChanged = { checked ->
                 AppConfig.INSTANCE.showToast = checked
-                AppConfig.save()
+                AppConfig.saveAsync()
             }
         )
     }

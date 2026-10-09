@@ -11,6 +11,10 @@ import com.surexu.sesame.util.Log;
 
 import java.io.File;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 @Data
 public class AppConfig {
 
@@ -23,6 +27,12 @@ public class AppConfig {
 
     /** 上次 load 解析失败：内存此时只是默认值，必须禁止写盘，否则会把默认值整份固化 */
     private static volatile boolean loadFailed = false;
+
+    /** 进程级加载标记：LanguageUtil/ThemeUtil 每页都会触发加载，仅首次真正读盘 */
+    private static final AtomicBoolean configLoadedOnce = new AtomicBoolean(false);
+
+    /** 异步落盘专用：单线程串行，避免并发写同一文件 */
+    private static final ExecutorService SAVE_EXECUTOR = Executors.newSingleThreadExecutor();
 
     @JsonIgnore
     private boolean init;
@@ -144,6 +154,26 @@ public class AppConfig {
             return false;
         }
         return FileUtil.write2File(toSaveStr(), new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json"));
+    }
+
+    /** 进程内仅首次真正读盘加载；此后所有调用直接返回已加载实例，避免每页重复 IO。
+     *  注入进程与模块 App 各持有本类的独立静态状态，两进程互不影响。 */
+    public static AppConfig loadIfNeeded() {
+        if (configLoadedOnce.compareAndSet(false, true)) {
+            load();
+        }
+        return INSTANCE;
+    }
+
+    /** 异步落盘：调用线程（主线程）只做快照序列化，文件 IO 交给后台单线程执行；
+     *  与 save() 同款 loadFailed 保护，失败时不写盘。 */
+    public static void saveAsync() {
+        if (loadFailed) {
+            Log.i(TAG, "上次APP配置加载失败，本次不写盘");
+            return;
+        }
+        final String json = toSaveStr();
+        SAVE_EXECUTOR.execute(() -> FileUtil.write2File(json, new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json")));
     }
 
     public static synchronized AppConfig load() {

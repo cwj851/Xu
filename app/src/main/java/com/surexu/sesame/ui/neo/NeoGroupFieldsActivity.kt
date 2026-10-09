@@ -6,6 +6,8 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -136,6 +138,8 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
 
     /** 重建配置项列表（搜索过滤后用）；保留滚动位置，避免重建后列表跳回顶部。 */
     private fun rebuildRows() {
+        // 取消待执行的防抖重建，避免重复重建
+        rebuildHandler.removeCallbacks(rebuildRunnable)
         val scroll = findViewById<ScrollView>(R.id.neo_group_scroll)
         val prevY = scroll.scrollY
         findViewById<LinearLayout>(R.id.neo_group_container).removeAllViews()
@@ -143,6 +147,20 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
         if (prevY > 0) {
             scroll.post { scroll.scrollTo(0, prevY) }
         }
+    }
+
+    private val rebuildHandler = Handler(Looper.getMainLooper())
+    private val rebuildRunnable = Runnable { rebuildRows() }
+
+    /** 开关点击后的防抖重建：合并快速连点，仅最后一下触发全列表重建。 */
+    private fun scheduleRebuild() {
+        rebuildHandler.removeCallbacks(rebuildRunnable)
+        rebuildHandler.postDelayed(rebuildRunnable, 120L)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        rebuildHandler.removeCallbacks(rebuildRunnable)
     }
 
     /** 三级页搜索匹配：字段名、编码或描述包含关键字（忽略大小写），与四级页一致 */
@@ -245,8 +263,9 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
                     field.setObjectValue(next)
                     updateBooleanStatus(statusView, next)
                     modified = true
-                    // 该开关可能是其他字段的父依赖：立即重建列表让依赖字段即时显示/隐藏
-                    rebuildRows()
+                    // 该开关可能是其他字段的父依赖：延迟合并重建列表让依赖字段即时显示/隐藏，
+                    // 快速连点只重建一次，避免全列表反复 inflate（卡顿根因之一）
+                    scheduleRebuild()
                 }
             }
 
@@ -416,7 +435,7 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
         row.setOnClickListener {
             val next = !getter()
             setter(next)
-            AppConfig.save()
+            AppConfig.saveAsync()
             sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.reloadConfig"))
             updateBooleanStatus(statusView, next)
         }
@@ -459,7 +478,7 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
                     return@showEditDialog
                 }
                 AppConfig.INSTANCE.toastOffsetY = parsed
-                AppConfig.save()
+                AppConfig.saveAsync()
                 sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.reloadConfig"))
                 refresh()
             }

@@ -89,7 +89,7 @@ class NeoServiceActivity : AppCompatActivity() {
             checked = AppConfig.INSTANCE.batteryPerm ?: true,
             onChanged = { checked ->
                 AppConfig.INSTANCE.batteryPerm = checked
-                AppConfig.save()
+                AppConfig.saveAsync()
                 refreshAll()
             }
         )

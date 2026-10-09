@@ -10,7 +10,7 @@ import com.surexu.sesame.data.AppConfig;
 
 public class LanguageUtil {
     public static Context setLocal(Context context) {
-        AppConfig.load();
+        AppConfig.loadIfNeeded();
         if (AppConfig.INSTANCE.getLanguageSimplifiedChinese()) {
             // 忽略系统语言，强制使用简体中文
             Locale locale = new Locale("zh", "CN"); // 简体中文的区域代码

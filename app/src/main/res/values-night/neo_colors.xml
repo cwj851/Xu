@@ -8,6 +8,7 @@
     <color name="neo_base">#0D1320</color>
     <color name="neo_card">#161E2D</color>
     <color name="neo_highlight">#232E41</color>
+    <color name="neo_bubble_ai">#1B2333</color>
 
     <!-- 阴影（夜间更暗） -->
     <color name="neo_shadow">#04070C</color>

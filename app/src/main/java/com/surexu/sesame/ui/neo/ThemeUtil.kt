@@ -18,16 +18,12 @@ object ThemeUtil {
         else -> AppCompatDelegate.MODE_NIGHT_NO
     }
 
-    /** 进程内仅触发一次 AppConfig 加载（Lombok boolean getter 名不可靠，故不用 isInit）。 */
-    private val configLoaded = java.util.concurrent.atomic.AtomicBoolean(false)
-
     /** 应用全局夜间模式（应在 Activity.attachBaseContext 中优先调用）。 */
     fun applyNightMode() {
         // 冷启动时 AppConfig 尚未 load，INSTANCE 还是默认值（followSystem=true），
         // 会错误地套用浅色；这里先确保配置已从磁盘加载再决定主题。
-        if (configLoaded.compareAndSet(false, true)) {
-            AppConfig.load()
-        }
+        // 与 LanguageUtil 共用 AppConfig.loadIfNeeded()，进程内只读盘一次，避免每页重复 IO
+        AppConfig.loadIfNeeded()
         AppCompatDelegate.setDefaultNightMode(currentNightMode())
     }
 

@@ -8,6 +8,7 @@
     <color name="neo_base">#F6F9FE</color>
     <color name="neo_card">#FDFEFF</color>
     <color name="neo_highlight">#FFFFFF</color>
+    <color name="neo_bubble_ai">#E9EEF7</color>
 
     <!-- 阴影（冷雾蓝灰） -->
     <color name="neo_shadow">#8398BD</color>

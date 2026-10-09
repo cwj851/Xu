@@ -87,7 +87,6 @@ public class AntOrchard extends ModelTask {
 
     private BooleanModelField orchardPlantNew;
     private BooleanModelField drawGameCenterAward;
-    private BooleanModelField drawTaskLottery;
     private BooleanModelField orchardChouChouLe;
     private BooleanModelField AutoOrchardChouChouLeTaskList;
     private SelectModelField OrchardChouChouLeTaskList;
@@ -132,8 +131,6 @@ public class AntOrchard extends ModelTask {
                 .setDependsOn("orchardSpreadManure")
                 .setDescription("按轮计：设为200并开一键施肥5次时突破到204；设为其他数值则设置多少施肥多少（不批量）"));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "农场乐园 | 游戏宝箱", true));
-        modelFields.addField(drawTaskLottery = new BooleanModelField("drawTaskLottery", "农场轮盘 | 做任务抽奖", false)
-                .setDescription("自动完成轮盘任务领抽奖次数并一次抽完（每日自动，每日0点重置）"));
         modelFields.addField(orchardChouChouLe = new BooleanModelField("orchardChouChouLe", "抽抽乐(阿肥寻宝记)", false));
         modelFields.addField(AutoOrchardChouChouLeTaskList = new BooleanModelField("AutoOrchardChouChouLeTaskList", "抽抽乐任务 | 自动黑名单", true).setDependsOn("orchardChouChouLe"));
         modelFields.addField(OrchardChouChouLeTaskList = new SelectModelField("OrchardChouChouLeTaskList", "抽抽乐任务 | 黑名单列表", new LinkedHashSet<>(), AlipayOrchardChouChouLeTaskList::getList).setDependsOn("AutoOrchardChouChouLeTaskList"));
@@ -180,7 +177,6 @@ public class AntOrchard extends ModelTask {
                 orchardListTask();
             }
 
-
             // 执行施肥逻辑
             if (orchardSpreadManure.getValue()) {
                 orchardSpreadManure();
@@ -189,11 +185,6 @@ public class AntOrchard extends ModelTask {
             // 好友助力
             if (assistFriend.getValue()) {
                 orchardAssistFriend();
-            }
-
-            // 农场轮盘：做任务抽奖
-            if (drawTaskLottery.getValue()) {
-                drawTaskLottery();
             }
 
             // 农场抽抽乐（阿肥寻宝记）
@@ -775,7 +766,6 @@ public class AntOrchard extends ModelTask {
         }
     }
 
-
     public String getWua() {
         if (wuaList == null) {
             try {
@@ -1352,211 +1342,6 @@ public class AntOrchard extends ModelTask {
         } catch (Throwable t) {
             Log.err(TAG, "orchardAssistFriend err:", t);
         }
-    }
-
-    /**
-     * 农场轮盘：做任务抽奖（阿肥寻宝记 / 农场抽抽乐）。
-     * <p>链路（2026-09-30 抓包实证）：
-     * <ol>
-     * <li>enterDrawActivity 进入活动拿 activityId；</li>
-     * <li>listTask 拉轮盘任务列表，TODO 且可自动完成的直接 finishTask，FINISHED 的 receiveTaskAward 领抽奖次数；</li>
-     * <li>drawSync 同步剩余次数 drawAsset.blance；</li>
-     * <li>batchDraw 一次抽完所有次数。</li>
-     * </ol>
-     * 每日 0 点重置：任务状态与次数都会归零，所以不设当日幂等标记（抓包当天任务做完后
-     * listTask 仍返回 FINISHED/RECEIVED 态，幂等由服务端承担）。
-     */
-    private void drawTaskLottery() {
-        try {
-            // 1. 进入活动页：拿 activityId
-            JSONObject enter = new JSONObject(AntOrchardRpcCall.enterDrawActivityantorchard("", "ANTORCHARD_DRAW_TIMES", "antorchard"));
-            if (!MessageUtil.checkSuccess(TAG, enter)) {
-                Log.record("农场轮盘⏭️进入活动失败: " + enter.optString("desc", enter.optString("resultDesc", "未知")));
-                return;
-            }
-            JSONObject drawActivity = enter.optJSONObject("drawActivity");
-            if (drawActivity == null) {
-                return;
-            }
-            String activityId = drawActivity.optString("activityId", "");
-            if (activityId.isEmpty()) {
-                return;
-            }
-            Log.record("农场轮盘🎡活动[" + drawActivity.optString("name", activityId) + "]");
-
-            // 2. 轮盘任务：完成可自动完成的 TODO 任务并领取 FINISHED 奖励
-            JSONObject taskJo = new JSONObject(AntOrchardRpcCall.listTaskantorchard("ANTORCHARD_DRAW_TIMES_TASK", "antorchard"));
-            if (MessageUtil.checkSuccess(TAG, taskJo)) {
-                JSONArray taskList = taskJo.optJSONArray("taskInfoList");
-                if (taskList != null) {
-                    for (int i = 0; i < taskList.length(); i++) {
-                        JSONObject task = taskList.optJSONObject(i);
-                        if (task == null) {
-                            continue;
-                        }
-                        JSONObject tracer = parseTaskTracer(task.optString("iepTaskTracer", ""));
-                        String taskType = tracer.optString("taskType", "");
-                        String taskStatus = tracer.optString("taskStatus", "");
-                        if (taskType.isEmpty()) {
-                            continue;
-                        }
-                        String title = parseDrawTaskTitle(task.optJSONObject("taskBaseInfo"));
-                        if ("TODO".equals(taskStatus)) {
-                            if (isAutoFinishableDrawTask(taskType)) {
-                                // 浏览/夺宝类任务：finishTask 直接完成（DRAW_GOLDENBEAN_liulan 抓包实证可直通）
-                                JSONObject finishJo = new JSONObject(AntOrchardRpcCall.finishTaskantorchard(taskType, "ANTORCHARD_DRAW_TIMES_TASK"));
-                                if (MessageUtil.checkSuccess(TAG, finishJo)) {
-                                    JSONObject awardInfo = finishJo.optJSONObject("awardInfo");
-                                    int delta = awardInfo != null ? awardInfo.optInt("deltaAwardCount", 0) : 1;
-                                    Log.farm("农场轮盘🧾完成任务[" + title + "]#+" + delta + "次抽奖");
-                                } else {
-                                    Log.record("农场轮盘⏭️任务[" + title + "]完成失败: " + finishJo.optString("desc"));
-                                }
-                                TimeUtil.sleep(500);
-                            } else {
-                                // 游戏类任务：从 targetUrl 解析 appId，匹配到 GameTask 枚举则直接上报游戏服完成；未注册则跳过
-                                String appId = parseDrawTaskAppId(task);
-                                GameTask game = (appId == null || appId.isEmpty()) ? null : GameTask.matchAppId(appId);
-                                if (game != null) {
-                                    int cnt = Math.max(1, tracer.optInt("finishOnceAwardCnt", 1));
-                                    Log.farm("农场轮盘🎮任务[" + title + "]匹配游戏[" + game.getTitle() + "]，上报完成(" + cnt + "次)...");
-                                    int ok = game.reportSync("农场轮盘", cnt);
-                                    Log.farm("农场轮盘🎮任务[" + title + "]游戏服上报成功" + ok + "次");
-                                } else {
-                                    Log.record("农场轮盘⏭️游戏类任务[" + title + "]未注册(appId=" + appId + ")，跳过");
-                                }
-                                TimeUtil.sleep(500);
-                            }
-                        } else if ("FINISHED".equals(taskStatus)) {
-                            JSONObject rightJo = new JSONObject(AntOrchardRpcCall.receiveTaskAwardantorchard("ANTORCHARD_DRAW_TIMES_TASK", taskType));
-                            if (MessageUtil.checkSuccess(TAG, rightJo)) {
-                                int inc = rightJo.optInt("incAwardCount", 0);
-                                Log.farm("农场轮盘🎖️领取[" + title + "]#+" + inc + "次抽奖");
-                            } else {
-                                Log.record("农场轮盘⏭️领取[" + title + "]失败: " + rightJo.optString("desc"));
-                            }
-                            TimeUtil.sleep(500);
-                        }
-                    }
-                }
-            }
-
-            // 3. 同步剩余次数
-            JSONObject sync = new JSONObject(AntOrchardRpcCall.drawSyncantorchard(activityId, "taskaward"));
-            int blance = 0;
-            if (MessageUtil.checkSuccess(TAG, sync)) {
-                JSONObject asset = sync.optJSONObject("drawAsset");
-                blance = asset != null ? asset.optInt("blance", 0) : 0;
-            }
-            if (blance <= 0) {
-                Log.record("农场轮盘⏭️无剩余抽奖次数");
-                return;
-            }
-
-            // 4. 一次抽完所有次数
-            String uid = UserIdMap.getCurrentUid();
-            JSONObject draw = new JSONObject(AntOrchardRpcCall.batchDrawantorchard(activityId, blance, uid));
-            if (!MessageUtil.checkSuccess(TAG, draw)) {
-                Log.record("农场轮盘⏭️抽奖失败: " + draw.optString("desc"));
-                return;
-            }
-            JSONArray drawResults = draw.optJSONArray("drawResultList");
-            StringBuilder prizes = new StringBuilder();
-            if (drawResults != null) {
-                for (int i = 0; i < drawResults.length(); i++) {
-                    JSONObject item = drawResults.optJSONObject(i);
-                    if (item == null) {
-                        continue;
-                    }
-                    JSONObject prizeVO = item.optJSONObject("prizeVO");
-                    if (prizeVO == null) {
-                        continue;
-                    }
-                    String prizeName = prizeVO.optString("prizeName", "");
-                    if (!prizeName.isEmpty()) {
-                        if (prizes.length() > 0) {
-                            prizes.append("、");
-                        }
-                        prizes.append(prizeName);
-                    }
-                }
-            }
-            Log.farm("农场轮盘🎡抽奖" + blance + "次#获得[" + (prizes.length() > 0 ? prizes : "见明细") + "]");
-        } catch (Throwable t) {
-            Log.err(TAG, "drawTaskLottery err:", t);
-        }
-    }
-
-    /** 解析 iepTaskTracer（形如 "groupId:XX~taskType:XX~taskStatus:XX~finishOnceAwardCnt:N"） */
-    private static JSONObject parseTaskTracer(String tracer) {
-        JSONObject jo = new JSONObject();
-        if (tracer == null || tracer.isEmpty()) {
-            return jo;
-        }
-        try {
-            String[] segments = tracer.split("~");
-            for (String seg : segments) {
-                if (seg == null || seg.isEmpty()) {
-                    continue;
-                }
-                int idx = seg.indexOf(':');
-                if (idx > 0) {
-                    jo.put(seg.substring(0, idx), seg.substring(idx + 1));
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return jo;
-    }
-
-    /** 从 taskBaseInfo.bizInfo 中取任务标题 */
-    private static String parseDrawTaskTitle(JSONObject baseInfo) {
-        try {
-            if (baseInfo == null) {
-                return "未知任务";
-            }
-            JSONObject biz = new JSONObject(baseInfo.optString("bizInfo", "{}"));
-            String title = biz.optString("title", "");
-            return title.isEmpty() ? "未知任务" : title;
-        } catch (Throwable t) {
-            return "未知任务";
-        }
-    }
-
-    /** 从任务条目解析游戏 appId（bizInfo.targetUrl 形如 "alipays://platformapi/startapp?appId=2060170000353846&query=channel..."） */
-    private static String parseDrawTaskAppId(JSONObject task) {
-        try {
-            JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
-            if (baseInfo == null) {
-                return null;
-            }
-            JSONObject biz = new JSONObject(baseInfo.optString("bizInfo", "{}"));
-            String targetUrl = biz.optString("targetUrl", "");
-            if (targetUrl.isEmpty()) {
-                return null;
-            }
-            int idx = targetUrl.indexOf("appId=");
-            if (idx < 0) {
-                return null;
-            }
-            int start = idx + "appId=".length();
-            int end = start;
-            while (end < targetUrl.length() && Character.isDigit(targetUrl.charAt(end))) {
-                end++;
-            }
-            return end > start ? targetUrl.substring(start, end) : null;
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    /** 轮盘任务中可纯接口直通完成的任务类型（浏览/夺宝类）。游戏类（攒金豆、向僵尸开炮等）需人工游玩，返回 false。 */
-    private static boolean isAutoFinishableDrawTask(String taskType) {
-        if (taskType == null || taskType.isEmpty()) {
-            return false;
-        }
-        // DRAW_GOLDENBEAN_liulan（去逛金豆夺宝得机会）抓包实证 finishTask 可直通完成
-        return taskType.contains("DRAW_GOLDENBEAN_liulan");
     }
 
     /**

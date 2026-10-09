@@ -207,11 +207,6 @@ public class AntOrchardRpcCall {
         return ApplicationHook.requestString("com.alipay.antiepdrawprod.drawSyncantorchard", "[{\"activityId\":\"" + activityId + "\",\"context\":{\"appMode\":\"student\"},\"requestType\":\"RPC\",\"sceneCode\":\"ANTORCHARD_DRAW_TIMES\",\"source\":\"" + source + "\"}]");
     }
 
-    /** 批量抽奖：times 为剩余次数，一次抽完。响应 drawResultList[]（prizeVO.prizeName） */
-    public static String batchDrawantorchard(String activityId, int times, String userId) {
-        return ApplicationHook.requestString("com.alipay.antiepdrawprod.batchDrawantorchard", "[{\"activityId\":\"" + activityId + "\",\"requestType\":\"RPC\",\"sceneCode\":\"ANTORCHARD_DRAW_TIMES\",\"source\":\"antorchard\",\"times\":" + times + ",\"userId\":\"" + userId + "\"}]");
-    }
-
     /** 单次抽奖（抽抽乐场景，逐次抽取并记录奖品） */
     public static String drawantorchard(String activityId, String sceneCode, String source, String userId) {
         return ApplicationHook.requestString("com.alipay.antiepdrawprod.drawantorchard", "[{\"activityId\":\"" + activityId + "\",\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\",\"userId\":\"" + userId + "\"}]");
