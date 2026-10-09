@@ -11,6 +11,7 @@ import com.surexu.sesame.util.idMap.UserIdMap;
 import com.surexu.sesame.data.ConfigV2;
 import com.surexu.sesame.data.ModelFields;
 import com.surexu.sesame.data.ModelField;
+import com.surexu.sesame.hook.Toast;
 
 import java.io.File;
 import java.util.*;
@@ -67,6 +68,8 @@ public class Status {
     
     // 保存时间
     private Long saveTime = 0L;
+    /** 落盘失败提示只弹一次，恢复后复位；避免同一轮故障里连续 Toast 刷屏 */
+    private static volatile boolean saveFailureNotified = false;
     
     /**
      * 绿色经营，收取好友金币已完成用户
@@ -793,14 +796,58 @@ public class Status {
             // 每次落盘都记一行会淹没有效日志（实测约 68 行/天），降为由「抓包记录」开关控制的调试日志
             Log.debug(TAG + ", 保存 status.json");
         }
-        long lastSaveTime = INSTANCE.saveTime;
+        // 注意：saveTime 不因失败回退。它同时是 updateDay()「是否跨天」的判据，回退会让同一天里
+        // 每次保存都重新判定跨天并 unload()，把当天已置的标记一并清掉，比丢掉一次落盘更糟。
+        INSTANCE.saveTime = System.currentTimeMillis();
+        boolean saved;
         try {
-            INSTANCE.saveTime = System.currentTimeMillis();
-            FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatusFile(currentUid));
+            // write2File 内部把异常全吞了并只返回 boolean，原先丢弃返回值等于「写失败也算保存成功」
+            saved = FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatusFile(currentUid));
         }
         catch (Exception e) {
-            INSTANCE.saveTime = lastSaveTime;
+            notifySaveFailure(currentUid, "序列化失败", e);
             throw e;
+        }
+        if (saved) {
+            if (saveFailureNotified) {
+                saveFailureNotified = false;
+                Log.system(TAG, "保存 status.json 恢复正常");
+            }
+        }
+        else {
+            notifySaveFailure(currentUid, "写入失败", null);
+        }
+    }
+
+    /**
+     * 落盘失败不再静默：内存里的标记保留（下一次 save 会整体补写，不会重复执行受标记守卫的动作），
+     * 但必须留下可归因的线索——否则「内存说做过、磁盘没记录」的状态只有进程重启才暴露。
+     */
+    private static void notifySaveFailure(String currentUid, String reason, Throwable error) {
+        if (saveFailureNotified) {
+            return;
+        }
+        saveFailureNotified = true;
+        String path = "未知路径";
+        boolean permissionToastShown = false;
+        try {
+            File statusFile = FileUtil.getStatusFile(currentUid);
+            path = statusFile.getAbsolutePath();
+            // 「已存在但不可写」这一情形 write2File 已自行 Toast，这里不重复弹
+            permissionToastShown = statusFile.exists() && !statusFile.canWrite();
+        } catch (Throwable ignored) {
+        }
+        Log.system(TAG, "保存 status.json " + reason + "，当日进度可能未被持久化: " + path);
+        if (error != null) {
+            Log.printStackTrace(TAG, error);
+        }
+        if (permissionToastShown) {
+            return;
+        }
+        try {
+            Toast.show("状态保存失败，当日进度可能丢失", true);
+        } catch (Throwable t) {
+            Log.debug("Toast 提示失败(状态保存失败): " + t);
         }
     }
     

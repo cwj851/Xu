@@ -13,6 +13,7 @@ import com.surexu.sesame.data.modelFieldExt.SelectModelField;
 import com.surexu.sesame.data.modelFieldExt.StringModelField;
 import com.surexu.sesame.data.task.ModelTask;
 import com.surexu.sesame.entity.AlipayAntMemberTaskList;
+import com.surexu.sesame.entity.AlipayWelfareFundTaskList;
 import com.surexu.sesame.entity.AlipayMemberCreditSesameTaskList;
 import com.surexu.sesame.entity.MemberBenefit;
 import com.surexu.sesame.hook.ApplicationHook;
@@ -83,7 +84,11 @@ public class AntMember extends ModelTask {
     private BooleanModelField enableGoldTicket;
     private BooleanModelField enableGoldTicketConsume;
     private BooleanModelField KuaiDiFuLiJia;
-    private BooleanModelField signinCalendar;
+    private BooleanModelField welfareFund;
+    private BooleanModelField welfareFundSign;
+    private BooleanModelField welfareFundTask;
+    private BooleanModelField AutoWelfareFundTaskList;
+    private SelectModelField WelfareFundTaskList;
     private BooleanModelField merchantSignIn;
     private BooleanModelField merchantKMDK;
     private BooleanModelField alchemyTask;
@@ -114,7 +119,6 @@ public class AntMember extends ModelTask {
         modelFields.addField(KuaiDiFuLiJia = new BooleanModelField("KuaiDiFuLiJia", "我的快递 | 福利加", false));
         modelFields.addField(enableGoldTicket = new BooleanModelField("enableGoldTicket", "黄金票 | 签到与收取", false));
         modelFields.addField(enableGoldTicketConsume = new BooleanModelField("enableGoldTicketConsume", "黄金票 | 提取/兑换黄金", false));
-        modelFields.addField(signinCalendar = new BooleanModelField("signinCalendar", "消费金 | 签到", false));
         modelFields.addField(merchantSignIn = new BooleanModelField("merchantSignIn", "商家服务 | 签到", false));
         modelFields.addField(merchantKMDK = new BooleanModelField("merchantKMDK", "商家服务 | 开门打卡", false));
         modelFields.addField(alchemyTask = new BooleanModelField("alchemyTask", "芝麻炼金", false));
@@ -122,6 +126,11 @@ public class AntMember extends ModelTask {
         modelFields.addField(insBeanExchangeBubbleBoost = new BooleanModelField("insBeanExchangeBubbleBoost", "蚂蚁保障 | 安心豆兑换时光加速器", false));
         modelFields.addField(insBeanExchangeGoldenTicket = new BooleanModelField("insBeanExchangeGoldenTicket", "蚂蚁保障 | 安心豆兑换黄金票", false));
         modelFields.addField(insGainSumInsured = new BooleanModelField("insGainSumInsured", "蚂蚁保障 | 保障金领取", false));
+        modelFields.addField(welfareFund = new BooleanModelField("welfareFund", "福利金 | 开启", false));
+        modelFields.addField(welfareFundSign = new BooleanModelField("welfareFundSign", "福利金 | 签到", true).setDependsOn("welfareFund"));
+        modelFields.addField(welfareFundTask = new BooleanModelField("welfareFundTask", "福利金 | 任务", true).setDependsOn("welfareFund"));
+        modelFields.addField(AutoWelfareFundTaskList = new BooleanModelField("AutoWelfareFundTaskList", "福利金任务 | 自动黑名单", true).setDependsOn("welfareFundTask"));
+        modelFields.addField(WelfareFundTaskList = new SelectModelField("WelfareFundTaskList", "福利金任务 | 黑名单列表", new LinkedHashSet<>(), AlipayWelfareFundTaskList::getList).setDependsOn("AutoWelfareFundTaskList"));
         return modelFields;
     }
     
@@ -206,10 +215,6 @@ public class AntMember extends ModelTask {
                 //查询玩乐豆小球列表，有则领取
                 queryPointBallList();
 
-                // 消费金签到
-                if (signinCalendar.getValue()) {
-                    signinCalendar();
-                }
                 if (merchantSignIn.getValue() || merchantKMDK.getValue()) {
                     if (MerchantService.transcodeCheck()) {
                         if (merchantSignIn.getValue()) {
@@ -220,6 +225,11 @@ public class AntMember extends ModelTask {
                         }
                     }
                 }
+            }
+            // 网商银行福利金（余额/签到/任务）
+            if (welfareFund.getValue()) {
+                WelfareFund.run(welfareFundSign.getValue(), welfareFundTask.getValue(),
+                        AutoWelfareFundTaskList.getValue(), WelfareFundTaskList.getValue());
             }
         }
         catch (Throwable t) {
@@ -1769,29 +1779,6 @@ public class AntMember extends ModelTask {
         }
     }
 
-    // 消费金签到
-    private void signinCalendar() {
-        try {
-            JSONObject jo = new JSONObject(AntMemberRpcCall.signinCalendar());
-            if (!MessageUtil.checkSuccess(TAG, jo)) {
-                return;
-            }
-            boolean signed = jo.optBoolean("isSignInToday");
-            if (!signed) {
-                jo = new JSONObject(AntMemberRpcCall.openBoxAward());
-                if (MessageUtil.checkSuccess(TAG, jo)) {
-                    int amount = jo.getInt("amount");
-                    int consecutiveSignInDays = jo.getInt("consecutiveSignInDays");
-                    Log.other("攒消费金💰签到[坚持" + consecutiveSignInDays + "天]#获得[" + amount + "消费金]");
-                }
-            }
-        }
-        catch (Throwable t) {
-            Log.i(TAG, "signinCalendar err:");
-            Log.printStackTrace(TAG, t);
-        }
-    }
-    
     /**
      * 检查并执行签到
      */

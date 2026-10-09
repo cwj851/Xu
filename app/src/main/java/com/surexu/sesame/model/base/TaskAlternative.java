@@ -6,6 +6,7 @@ import org.json.JSONObject;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import com.surexu.sesame.hook.ApplicationHook;
 import com.surexu.sesame.util.Log;
@@ -24,6 +25,35 @@ public final class TaskAlternative {
     /** 庄园路径验证过的 version；服务端不校验 version，各模块可沿用自己那份。 */
     public static final String DEFAULT_VERSION = "1.8.2302070202.46";
 
+    /**
+     * 交易/履约类 bizKey（下单、支付、购买、缴费、还款、充值、淘宝等）。
+     * 用 doFarmTask 伪申报会被判风险操作（服务端回 1009 风控），一律不发。
+     */
+    private static final String[] TRANSACTION_BIZ_KEYWORDS = {
+            "xiadan", "zhifu", "pay", "goumai", "jiaofei", "huankuan", "chongzhi",
+            "taobao", "babafarm_tb", "70000"
+    };
+
+    /** bizKey 是否属于交易/履约类（下单、支付、购买、缴费、还款、充值、淘宝）。 */
+    public static boolean isTransactionTask(String bizKey) {
+        if (bizKey == null || bizKey.isEmpty()) {
+            return false;
+        }
+        String key = bizKey.toLowerCase();
+        for (String keyword : TRANSACTION_BIZ_KEYWORDS) {
+            // 纯数字关键词按「整段数字」匹配：直接 contains 时 70000 会命中 appId
+            // （如 2060170000359285 里的 "170000"）,把「玩游戏」这类任务误判成交易类
+            if (keyword.matches("[0-9]+")) {
+                if (Pattern.compile("(?<![0-9])" + keyword + "(?![0-9])").matcher(key).find()) {
+                    return true;
+                }
+            } else if (key.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 日志出口（{@code Log.farm/forest/other/goldenBeans}）。 */
     public interface LogSink {
         void log(String message);
@@ -34,6 +64,10 @@ public final class TaskAlternative {
 
     /** 唯一的 doFarmTask payload，返回原始响应。 */
     public static String request(String bizKey, String taskSceneCode, String version) {
+        if (isTransactionTask(bizKey)) {
+            Log.i("doFarmTask⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
+            return "{}";
+        }
         String args = "[{\"bizKey\":\"" + bizKey + "\",\"requestType\":\"RPC\",\"sceneCode\":\"ANTFARM\","
                 + "\"source\":\"H5\",\"taskSceneCode\":\"" + taskSceneCode + "\",\"version\":\"" + version + "\"}]";
         return ApplicationHook.requestString("com.alipay.antfarm.doFarmTask", args);
@@ -77,6 +111,10 @@ public final class TaskAlternative {
                                      String bizKey, String taskSceneCode, String version,
                                      String logPrefix, LogSink sink) {
         try {
+            if (isTransactionTask(bizKey)) {
+                Log.i(logPrefix + "⏭️跳过[" + taskTitle + "]#bizKey=" + bizKey + "，交易/履约类不自动申报");
+                return null;
+            }
             JSONObject doFarmJo = doFarmTask(bizKey, taskSceneCode, version);
             if (pending != null && taskId != null && !taskId.isEmpty()) {
                 pending.put(taskId, taskTitle);

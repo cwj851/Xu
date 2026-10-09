@@ -35,6 +35,13 @@ public class goldenbeansRpcCall {
     public static final String ALCHEMY_TASK_SCENE_CODE = "GOLDEN_BEAN_ZHIMA_LIST";
 
     public static final String VERSION = "20260803.01";
+
+    /** 金豆商城：兑换页场景码/入口/子渠道/版本 */
+    public static final String MALL_SCENE_CODE = "ANTORCHARD_JINDOU_MALL";
+    public static final String MALL_SOURCE = "MASTER";
+    private static final String MALL_ORDER_SOURCE = "antorchard";
+    private static final String MALL_SUB_CHANNEL = "babafarm";
+    public static final String MALL_VERSION = "20260901.01";
     /** 金猫矿工页面来源 */
     public static final String MINER_PAGE_SOURCE =
             "ch_url-https://render.alipay.com/p/yuyan/180020010001291350/index.html";
@@ -114,6 +121,46 @@ public class goldenbeansRpcCall {
         params.put("syncTypeList", typeList);
         params.put("version", VERSION);
         return request("com.alipay.goldenbean.sync", params);
+    }
+
+    // ===== 金豆商城 =====
+    /** 商城商品列表；响应 itemInfoVOList[].skuModelList[] 带 spuId/skuId/价格与当日可兑次数 */
+    public static String mallItems(int startIndex, int pageSize) throws Exception {
+        JSONObject params = new JSONObject();
+        params.put("bizType", FARM_BIZ_TYPE);
+        params.put("pageSize", pageSize);
+        params.put("requestType", "RPC");
+        params.put("sceneCode", MALL_SCENE_CODE);
+        params.put("source", MALL_SOURCE);
+        params.put("startIndex", startIndex);
+        params.put("subChannel", MALL_SUB_CHANNEL);
+        params.put("version", MALL_VERSION);
+        return request("com.alipay.antiep.itemList", params);
+    }
+
+    /** 商城兑换；以 canBuy 判定是否成立，orderNo 用于事后核对 */
+    public static String mallExchange(String spuId, String skuId) throws Exception {
+        JSONObject params = new JSONObject();
+        params.put("bizType", FARM_BIZ_TYPE);
+        params.put("requestId", UUID.randomUUID().toString());
+        params.put("sceneCode", MALL_SCENE_CODE);
+        params.put("skuId", skuId);
+        params.put("source", MALL_SOURCE);
+        params.put("spuId", spuId);
+        params.put("version", MALL_VERSION);
+        return request("com.alipay.antcommonweal.exchange.h5.exchangeBenefit", params);
+    }
+
+    /** 商城兑换订单查询，响应 orderInfos[] 用于兑换后回查是否真的落单 */
+    public static String mallOrders(int pageNum, int size) throws Exception {
+        JSONObject params = new JSONObject();
+        params.put("bizType", FARM_BIZ_TYPE);
+        params.put("pageNum", pageNum);
+        params.put("sceneCode", MALL_SCENE_CODE);
+        params.put("size", size);
+        params.put("source", MALL_ORDER_SOURCE);
+        params.put("version", MALL_VERSION);
+        return request("com.alipay.antcommonweal.exchange.h5.queryExchangeOrders", params);
     }
 
     /** 每日签到（默认农场入口） */

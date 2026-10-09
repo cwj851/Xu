@@ -15,6 +15,7 @@ import android.view.Window
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -30,8 +31,7 @@ import com.surexu.sesame.data.ModelGroup
 import com.surexu.sesame.data.modelFieldExt.ChoiceModelField
 import com.surexu.sesame.data.modelFieldExt.EmptyModelField
 import com.surexu.sesame.data.modelFieldExt.IntegerModelField
-import com.surexu.sesame.ui.miuix.MiuixGroupFieldsActivity
-import com.surexu.sesame.ui.miuix.MiuixSelectionEditActivity
+import com.surexu.sesame.ui.neo.NeoSelectionEditActivity
 import com.surexu.sesame.util.LanguageUtil
 
 /** 分组配置二级页：拟态风格渲染某 ModelGroup 全部配置项，改动写回 ConfigV2。 */
@@ -46,6 +46,7 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
     private var currentQuery = ""
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         super.attachBaseContext(LanguageUtil.setLocal(newBase))
     }
 
@@ -66,7 +67,7 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
         Model.initAllModel()
         // 必须先预加载账号配置：否则字段对象是构造默认值，未开开关直接返回时
         // save() 会把默认值当成改动整份覆盖磁盘真实配置，且 UI 显示的开关状态与真实配置不一致
-        ConfigPreload.prepare(null)
+        ConfigPreload.prepare(currentConfigUserId())
 
         findViewById<TextView>(R.id.neo_group_title).text = g.name
         findViewById<View>(R.id.neo_group_back).setOnClickListener { saveAndFinish() }
@@ -102,12 +103,19 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
         saveAndFinish()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 从四级页(SELECT/SELECT_AND_COUNT 编辑)返回时父字段可能已变化，
+        // 立即重算依赖字段可见性，无需返回重进页面
+        rebuildRows()
+    }
+
     /** 保存字段改动并通知支付宝进程重载；无改动直接返回，不保存不广播。 */
     private fun saveAndFinish() {
         try {
             // hasFieldChanges 依赖 ConfigPreload 已加载（valueBaseline 非空），
             // 未加载时恒为 false，因此必须保证 onCreate 里先 prepare 再进本方法。
-            if (ConfigV2.hasFieldChanges() && ConfigV2.save(null, false)) {
+            if (ConfigV2.hasFieldChanges() && ConfigV2.save(currentConfigUserId(), false)) {
                 sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.restart"))
                 modified = false
             }
@@ -119,10 +127,22 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    /** 重建配置项列表（搜索过滤后用） */
+    /** 配置读写跟随账号页选中的账号（与主界面恢复逻辑同一存储）；未选账号时回退默认配置。 */
+    private fun currentConfigUserId(): String? {
+        val last = getSharedPreferences("sesame_ui_state", Context.MODE_PRIVATE)
+            .getString("last_selected_user_id", null)
+        return if (last.isNullOrEmpty()) null else last
+    }
+
+    /** 重建配置项列表（搜索过滤后用）；保留滚动位置，避免重建后列表跳回顶部。 */
     private fun rebuildRows() {
+        val scroll = findViewById<ScrollView>(R.id.neo_group_scroll)
+        val prevY = scroll.scrollY
         findViewById<LinearLayout>(R.id.neo_group_container).removeAllViews()
         buildRows()
+        if (prevY > 0) {
+            scroll.post { scroll.scrollTo(0, prevY) }
+        }
     }
 
     /** 三级页搜索匹配：字段名、编码或描述包含关键字（忽略大小写），与四级页一致 */
@@ -225,6 +245,8 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
                     field.setObjectValue(next)
                     updateBooleanStatus(statusView, next)
                     modified = true
+                    // 该开关可能是其他字段的父依赖：立即重建列表让依赖字段即时显示/隐藏
+                    rebuildRows()
                 }
             }
 
@@ -331,11 +353,10 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
                 summaryView.text = "点击编辑"
                 row.setOnClickListener {
                     startActivity(
-                        Intent(this, MiuixSelectionEditActivity::class.java).apply {
-                            putExtra(MiuixGroupFieldsActivity.EXTRA_USER_ID, null as String?)
-                            putExtra(MiuixGroupFieldsActivity.EXTRA_GROUP_CODE, ownerGroup.code)
-                            putExtra(MiuixSelectionEditActivity.EXTRA_FIELD_CODE, field.code)
-                            putExtra(MiuixSelectionEditActivity.EXTRA_MODEL_CODE, mc.code)
+                        Intent(this, NeoSelectionEditActivity::class.java).apply {
+                            putExtra(NeoSelectionEditActivity.EXTRA_GROUP_CODE, ownerGroup.code)
+                            putExtra(NeoSelectionEditActivity.EXTRA_FIELD_CODE, field.code)
+                            putExtra(NeoSelectionEditActivity.EXTRA_MODEL_CODE, mc.code)
                         }
                     )
                 }

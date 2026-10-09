@@ -38,6 +38,7 @@ import com.surexu.sesame.util.ToastUtil
 class NeoAIChatActivity : AppCompatActivity() {
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         super.attachBaseContext(LanguageUtil.setLocal(newBase))
     }
 
@@ -45,14 +46,21 @@ class NeoAIChatActivity : AppCompatActivity() {
     private lateinit var scrollView: ScrollView
     private val handler = Handler(Looper.getMainLooper())
 
+    /** 配置读写跟随账号页选中的账号（与主界面恢复逻辑同一存储）；未选账号时回退默认配置。 */
+    private fun currentConfigUserId(): String? {
+        val last = getSharedPreferences("sesame_ui_state", Context.MODE_PRIVATE)
+            .getString("last_selected_user_id", null)
+        return if (last.isNullOrEmpty()) null else last
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.neo_page_ai_chat)
         window.statusBarColor = getColor(R.color.neo_base)
         window.navigationBarColor = getColor(R.color.neo_base)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = !ThemeUtil.isNightActive(window.decorView.context)
+            isAppearanceLightNavigationBars = !ThemeUtil.isNightActive(window.decorView.context)
         }
 
         msgList = findViewById(R.id.neo_ai_msg_list)
@@ -105,7 +113,7 @@ class NeoAIChatActivity : AppCompatActivity() {
     private fun showConfigDialog() {
         // 先预加载配置：否则 model.fields 是构造默认值，弹窗里直接改 + ConfigV2.save
         // 会把默认值整份覆盖磁盘真实配置（与功能页同源缺陷）
-        ConfigPreload.prepare(null)
+        ConfigPreload.prepare(currentConfigUserId())
         val model = Model.getModel(AnswerAI::class.java) ?: return
         val dialog = Dialog(this)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -162,7 +170,7 @@ class NeoAIChatActivity : AppCompatActivity() {
         dialog.findViewById<TextView>(R.id.neo_edit_cancel).setOnClickListener { dialog.dismiss() }
         dialog.findViewById<TextView>(R.id.neo_edit_ok).setOnClickListener {
             if (modified) {
-                ConfigV2.save(null, false)
+                ConfigV2.save(currentConfigUserId(), false)
                 toast("已保存，聊天立即生效")
             }
             dialog.dismiss()

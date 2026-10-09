@@ -25,12 +25,10 @@ import com.surexu.sesame.model.task.goldenbeans.goldenbeans;
 import com.surexu.sesame.model.task.healthIslandRewards.HealthIslandRewards;
 import com.surexu.sesame.model.task.localTheme.LocalTheme;
 import com.surexu.sesame.model.task.luckCard.LuckCardStatus;
-import com.surexu.sesame.model.task.myBankWelfare.MyBankWelfare;
 import com.surexu.sesame.model.task.other.OtherTask;
 import com.surexu.sesame.model.task.promoprodRewards.PromoprodRewards;
 import com.surexu.sesame.model.task.protectEcology.ProtectEcology;
 import com.surexu.sesame.model.task.videoRewards.VideoRewards;
-import com.surexu.sesame.model.task.weeklyWelfare.WeeklyWelfare;
 import com.surexu.sesame.model.task.youthPrivilege.YouthPrivilege;
 import lombok.Getter;
 
@@ -60,8 +58,6 @@ public class ModelOrder {
         clazzList.add(YouthPrivilege.class);
         clazzList.add(DayDaySave.class);
         clazzList.add(DailyCash.class);
-        clazzList.add(WeeklyWelfare.class);
-        clazzList.add(MyBankWelfare.class);
         clazzList.add(LocalTheme.class);
         clazzList.add(LuckCardStatus.class);
         clazzList.add(PromoprodRewards.class);

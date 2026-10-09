@@ -37,6 +37,7 @@ class NeoMockRequestActivity : AppCompatActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         super.attachBaseContext(LanguageUtil.setLocal(newBase))
     }
 
@@ -71,8 +72,8 @@ class NeoMockRequestActivity : AppCompatActivity() {
         window.statusBarColor = getColor(R.color.neo_base)
         window.navigationBarColor = getColor(R.color.neo_base)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = !ThemeUtil.isNightActive(window.decorView.context)
+            isAppearanceLightNavigationBars = !ThemeUtil.isNightActive(window.decorView.context)
         }
     }
 

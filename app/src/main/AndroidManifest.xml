@@ -24,7 +24,7 @@
         tools:targetApi="q">
 
         <activity
-            android:name=".ui.miuix.MiuixMainActivity"
+            android:name=".ui.neo.NeoMainActivity"
             android:exported="true"
             android:resizeableActivity="true"
             tools:targetApi="n">
@@ -34,13 +34,6 @@
             </intent-filter>
         </activity>
 
-        <!-- 原创拟态新 UI 壳：与旧 miuix 界面并存，功能逐个对接中 -->
-        <activity
-            android:name=".ui.neo.NeoMainActivity"
-            android:exported="true"
-            android:resizeableActivity="true"
-            tools:targetApi="n" />
-
         <activity
             android:name=".ui.neo.NeoAIChatActivity"
             android:exported="false"
@@ -48,6 +41,11 @@
 
         <activity
             android:name=".ui.neo.NeoGroupFieldsActivity"
+            android:exported="false"
+            android:resizeableActivity="true" />
+
+        <activity
+            android:name=".ui.neo.NeoSelectionEditActivity"
             android:exported="false"
             android:resizeableActivity="true" />
 
@@ -83,38 +81,6 @@
 
         <activity
             android:name=".ui.neo.NeoMockRequestActivity"
-            android:exported="false"
-            android:resizeableActivity="true" />
-
-        <activity
-            android:name=".ui.miuix.MiuixGroupFieldsActivity"
-            android:exported="false"
-            android:resizeableActivity="true" />
-
-        <activity
-            android:name=".ui.miuix.MiuixSelectionEditActivity"
-            android:exported="false"
-            android:resizeableActivity="true" />
-
-        <activity
-            android:name=".ui.miuix.MiuixExtensionsActivity"
-            android:exported="true"
-            android:resizeableActivity="true"
-            tools:targetApi="n" />
-
-        <activity
-            android:name=".ui.miuix.MiuixLogViewerActivity"
-            android:exported="true"
-            android:resizeableActivity="true"
-            tools:targetApi="n" />
-
-        <activity
-            android:name=".ui.miuix.MiuixFriendStatsActivity"
-            android:exported="false"
-            android:resizeableActivity="true" />
-
-        <activity
-            android:name=".ui.miuix.MiuixAboutActivity"
             android:exported="false"
             android:resizeableActivity="true" />
 

@@ -66,7 +66,8 @@ import java.util.concurrent.TimeUnit
  * 设计语言：霜白基色 #F6F9FE + 深雾蓝灰阴影 + 霓虹青主色，
  * 凸起/凹陷全部由 drawable 光照层模拟（见 res/drawable/neu_*）。
  *
- * 当前为壳阶段：功能卡片均为占位，逐个对接后替换各卡片点击逻辑。
+ * 功能覆盖与模块版一致：一级入口基础/森林/庄园/新村/运动/其他全部真实跳转；
+ * 农场(ORCHARD)并入庄园页、会员(MEMBER)并入其他页，金豆记录在日志页"记录"标签。
  */
 class NeoMainActivity : AppCompatActivity() {
 
@@ -74,13 +75,17 @@ class NeoMainActivity : AppCompatActivity() {
         private const val PREFS_UI = "sesame_ui_state"
         private const val KEY_LAST_SELECTED_USER = "last_selected_user_id"
 
-        // ===== 激活探测（与模块版 MiuixMainActivity 对齐）=====
+        // ===== 激活探测（与旧版模块 UI 主页面逻辑对齐）=====
         /** 激活探测最多重试次数 */
         private const val MAX_RUN_TYPE_PROBE_TIMES = 5
         /** 激活探测重试间隔(毫秒) */
         private const val RUN_TYPE_PROBE_INTERVAL_MS = 3000L
 
-        // ===== 日志页常量（与模块版 MiuixLogViewerActivity 对齐） =====
+        // ===== 能量统计实时刷新 =====
+        /** 能量统计卡自动刷新间隔(毫秒)：注入进程落盘 statistics.json 后 UI 定时拉新 */
+        private const val STATS_REFRESH_INTERVAL_MS = 30000L
+
+        // ===== 日志页常量（与旧版模块 UI 日志页逻辑对齐） =====
         /** 日志自动刷新间隔(毫秒) */
         const val LOG_REFRESH_INTERVAL_MS = 1000L
         /** 日志文件尾部最多读取的字节数(1MB) */
@@ -90,6 +95,7 @@ class NeoMainActivity : AppCompatActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         var ctx = LanguageUtil.setLocal(newBase)
         val scale = ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
             .getInt(NeoSystemActivity.KEY_UI_SCALE, 100)
@@ -107,6 +113,19 @@ class NeoMainActivity : AppCompatActivity() {
     private lateinit var navLabels: List<TextView>
 
     private val REQUEST_IMPORT_BACKUP = 1001
+    private val REQUEST_EXPORT_BACKUP = 1002
+
+    /** 立即备份选择位置保存时暂存待写入的配置内容。 */
+    private var pendingBackupJson: String? = null
+
+    /** 能量统计卡定时刷新（读 statistics.json 磁盘快照，注入进程落盘后自动拉新）。 */
+    private val statsRefreshHandler = Handler(Looper.getMainLooper())
+    private val statsRefreshRunnable = object : Runnable {
+        override fun run() {
+            bindEnergyStats()
+            statsRefreshHandler.postDelayed(this, STATS_REFRESH_INTERVAL_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -189,12 +208,18 @@ class NeoMainActivity : AppCompatActivity() {
         // 系统界面设置可能已变更：即时应用悬浮底栏并刷新设置页副标题
         applyFloatNav()
         updateSystemSettingSub()
+        // 能量统计实时刷新：回到前台立即拉一次，并启动定时拉新（注入进程落盘 statistics.json 后自动同步）
+        bindEnergyStats()
+        statsRefreshHandler.removeCallbacks(statsRefreshRunnable)
+        statsRefreshHandler.postDelayed(statsRefreshRunnable, STATS_REFRESH_INTERVAL_MS)
     }
 
     override fun onPause() {
         super.onPause()
         // 离开前台即停止状态轮询，避免后台无谓广播与泄漏（与模块版一致）
         runTypeProbeHandler.removeCallbacks(runTypeProbeRunnable)
+        // 离开前台停止能量统计定时刷新
+        statsRefreshHandler.removeCallbacks(statsRefreshRunnable)
     }
 
     override fun onDestroy() {
@@ -212,8 +237,8 @@ class NeoMainActivity : AppCompatActivity() {
         window.statusBarColor = getColor(R.color.neo_base)
         window.navigationBarColor = getColor(R.color.neo_base)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = !ThemeUtil.isNightActive(window.decorView.context)
+            isAppearanceLightNavigationBars = !ThemeUtil.isNightActive(window.decorView.context)
         }
     }
 
@@ -278,10 +303,12 @@ class NeoMainActivity : AppCompatActivity() {
     /** 恢复默认配置：删除配置与备份后重建出厂默认，并通知支付宝进程重载。 */
     private fun restoreDefaultConfig() {
         try {
-            val file = FileUtil.getDefaultConfigV2File()
+            val userId = restoreSelectedAccount()
+            val file = if (StringUtil.isEmpty(userId)) FileUtil.getDefaultConfigV2File()
+            else FileUtil.getConfigV2File(userId!!)
             if (file.exists()) file.delete()
             ConfigV2.unload()
-            ConfigV2.load(null)
+            ConfigV2.load(userId)
             sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.restart"))
             Toast.makeText(this, "已恢复默认配置", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
@@ -344,7 +371,7 @@ class NeoMainActivity : AppCompatActivity() {
         }
     }
 
-    /** 向支付宝进程查询模块注入状态：模块版 MiuixMainActivity.sendQueryBroadcast 同款动作 */
+    /** 向支付宝进程查询模块注入状态：旧版模块 UI 主页面同款动作 */
     private fun sendRunTypeQueryBroadcast() {
         try {
             sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.status"))
@@ -525,7 +552,7 @@ class NeoMainActivity : AppCompatActivity() {
 
     private val logTabs = listOf("森林", "庄园", "其他", "记录", "错误", "调试", "运行")
 
-    // ==================== 日志页数据对接（读取/解析/渲染，逻辑与模块版 MiuixLogViewerActivity 对齐） ====================
+    // ==================== 日志页数据对接（读取/解析/渲染，逻辑与旧版模块 UI 日志页对齐） ====================
 
     private data class NeoLogEntry(val lineNumber: Int, val time: String?, val tag: String?, val body: String)
 
@@ -544,7 +571,7 @@ class NeoMainActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 激活探测（与模块版 MiuixMainActivity 对齐）=====
+    // ===== 激活探测（与旧版模块 UI 主页面逻辑对齐）=====
     /** 激活探测轮询器：DISABLE 时周期发查询广播，直到收到模块回包或达上限 */
     private val runTypeProbeHandler = Handler(Looper.getMainLooper())
     private var runTypeProbeTimes = 0
@@ -875,7 +902,11 @@ class NeoMainActivity : AppCompatActivity() {
         val list = findViewById<LinearLayout>(R.id.neo_setting_list) ?: return
         if (list.childCount == 0) return
         val sub = list.getChildAt(0).findViewById<TextView>(R.id.neo_setting_sub) ?: return
-        val theme = if (themeIsLight()) "浅色" else "跟随系统"
+        val theme = when {
+            themeIsLight() -> "浅色"
+            AppConfig.INSTANCE.darkMode ?: false -> "深色"
+            else -> "跟随系统"
+        }
         val scale = uiPrefs.getInt(NeoSystemActivity.KEY_UI_SCALE, 100)
         val floatOn = uiPrefs.getBoolean(NeoSystemActivity.KEY_UI_FLOAT_NAV, false)
         sub.text = "$theme · 缩放${scale}%" + if (floatOn) " · 悬浮开" else ""
@@ -1040,7 +1071,7 @@ class NeoMainActivity : AppCompatActivity() {
         }
     }
 
-    /** 立即备份：把当前默认配置复制为带时间戳的备份文件（独立于每日滚动备份）。 */
+    /** 立即备份：弹框让用户自定义文件名与保存位置（默认位置备份目录或系统文件选择器）。 */
     private fun backupNow() {
         try {
             val src = FileUtil.getDefaultConfigV2File()
@@ -1049,19 +1080,109 @@ class NeoMainActivity : AppCompatActivity() {
                 return
             }
             val json = FileUtil.readFromFile(src)
-            val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            val target = File(
-                FileUtil.getBackupDirectoryFile(),
-                FileUtil.BACKUP_FILE_PREFIX + "default_" + ts + FileUtil.BACKUP_FILE_EXT
+            val defaultName = FileUtil.BACKUP_FILE_PREFIX + "default_" +
+                SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date()) + FileUtil.BACKUP_FILE_EXT
+
+            val dialog = Dialog(this)
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+            dialog.setContentView(R.layout.neo_dialog_field_edit)
+            dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            dialog.setCanceledOnTouchOutside(true)
+            dialog.window?.setLayout(
+                resources.displayMetrics.widthPixels - (64 * resources.displayMetrics.density).toInt(),
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            if (FileUtil.write2File(json, target)) {
-                Toast.makeText(this, "已备份：${target.name}", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "备份失败", Toast.LENGTH_SHORT).show()
+
+            dialog.findViewById<TextView>(R.id.neo_edit_title).text = "立即备份（可改文件名）"
+            dialog.findViewById<TextView>(R.id.neo_edit_ok).visibility = View.GONE
+            dialog.findViewById<TextView>(R.id.neo_edit_cancel).setOnClickListener { dialog.dismiss() }
+
+            val content = dialog.findViewById<FrameLayout>(R.id.neo_edit_content)
+            val inner = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+            val nameInput = EditText(this).apply {
+                setText(defaultName)
+                setTextColor(ContextCompat.getColor(this@NeoMainActivity, R.color.neo_text_primary))
+                setTextSize(14f)
+                background = ContextCompat.getDrawable(this@NeoMainActivity, R.drawable.neu_input_bg)
+                setPadding(dp(14), dp(10), dp(14), dp(10))
             }
+            inner.addView(
+                nameInput,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
+
+            fun normalizeName(): String {
+                var name = nameInput.text.toString().trim()
+                if (name.isEmpty()) return ""
+                if (!name.endsWith(FileUtil.BACKUP_FILE_EXT)) name += FileUtil.BACKUP_FILE_EXT
+                return name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            }
+
+            inner.addView(
+                buildBackupActionRow("保存到默认位置", "写入备份目录 ${FileUtil.getBackupDirectoryFile().path}") {
+                    val name = normalizeName()
+                    if (name.isEmpty()) {
+                        Toast.makeText(this, "文件名不能为空", Toast.LENGTH_SHORT).show()
+                        return@buildBackupActionRow
+                    }
+                    val target = File(FileUtil.getBackupDirectoryFile(), name)
+                    if (FileUtil.write2File(json, target)) {
+                        dialog.dismiss()
+                        Toast.makeText(this, "已备份：${target.name}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "备份失败", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+            inner.addView(
+                buildBackupActionRow("选择位置保存", "用系统文件选择器自定义目录与文件名") {
+                    val name = normalizeName()
+                    if (name.isEmpty()) {
+                        Toast.makeText(this, "文件名不能为空", Toast.LENGTH_SHORT).show()
+                        return@buildBackupActionRow
+                    }
+                    try {
+                        pendingBackupJson = json
+                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_TITLE, name)
+                        }
+                        startActivityForResult(intent, REQUEST_EXPORT_BACKUP)
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "无法打开文件选择器：" + (e.message ?: ""), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+
+            content.addView(
+                inner,
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
+            dialog.show()
         } catch (e: Exception) {
             Toast.makeText(this, "备份失败：" + (e.message ?: ""), Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** 立即备份弹窗内的操作行（拟态样式），点击执行回调。 */
+    private fun buildBackupActionRow(name: String, sub: String, onClick: () -> Unit): View {
+        val row = TextView(this).apply {
+            text = "$name\n$sub"
+            textSize = 14f
+            setTextColor(ContextCompat.getColor(this@NeoMainActivity, R.color.neo_primary))
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = ContextCompat.getDrawable(this@NeoMainActivity, R.drawable.neu_input_bg)
+        }
+        val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(0, 0, 0, dp(8))
+        row.layoutParams = lp
+        row.setOnClickListener {
+            haptic(row)
+            onClick()
+        }
+        return row
     }
 
     /** 从备份恢复：列出备份目录全部配置备份，点选即写回默认配置并重载。 */
@@ -1087,9 +1208,14 @@ class NeoMainActivity : AppCompatActivity() {
                 Toast.makeText(this, "备份文件为空", Toast.LENGTH_SHORT).show()
                 return
             }
-            FileUtil.setDefaultConfigV2File(json)
+            val userId = restoreSelectedAccount()
+            if (StringUtil.isEmpty(userId)) {
+                FileUtil.setDefaultConfigV2File(json)
+            } else {
+                FileUtil.setConfigV2File(userId!!, json)
+            }
             ConfigV2.unload()
-            ConfigV2.load(null)
+            ConfigV2.load(userId)
             sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.restart"))
             Toast.makeText(this, "已从 ${backup.name} 恢复", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
@@ -1113,6 +1239,25 @@ class NeoMainActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_EXPORT_BACKUP) {
+            if (resultCode == RESULT_OK && data != null && data.data != null) {
+                try {
+                    val json = pendingBackupJson
+                    if (json != null) {
+                        contentResolver.openOutputStream(data.data!!)?.use { out ->
+                            out.write(json.toByteArray(Charsets.UTF_8))
+                        }
+                        Toast.makeText(this, "已备份到所选位置", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "备份失败：无待写入内容", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(this, "备份失败：" + (e.message ?: ""), Toast.LENGTH_SHORT).show()
+                }
+            }
+            pendingBackupJson = null
+            return
+        }
         if (requestCode != REQUEST_IMPORT_BACKUP || resultCode != RESULT_OK || data == null) return
         val uri: Uri? = data.data
         if (uri == null) return
@@ -1122,9 +1267,14 @@ class NeoMainActivity : AppCompatActivity() {
                 Toast.makeText(this, "文件内容为空", Toast.LENGTH_SHORT).show()
                 return
             }
-            FileUtil.setDefaultConfigV2File(json)
+            val userId = restoreSelectedAccount()
+            if (StringUtil.isEmpty(userId)) {
+                FileUtil.setDefaultConfigV2File(json)
+            } else {
+                FileUtil.setConfigV2File(userId!!, json)
+            }
             ConfigV2.unload()
-            ConfigV2.load(null)
+            ConfigV2.load(userId)
             sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.restart"))
             Toast.makeText(this, "已从外部文件恢复配置", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {

@@ -1,5 +1,4 @@
 apply plugin: 'com.android.application'
-apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 android {
     def version = project.getProperties().get("version")
@@ -40,7 +39,6 @@ android {
     }
     buildFeatures {
         buildConfig = true // 显式启用 BuildConfig
-        compose = true
     }
     ext {
         applicationName = "Sure-Xu"
@@ -143,10 +141,6 @@ dependencies {
     // NanoHTTPD 核心依赖（最新稳定版）
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
-    // Kotlin + Compose（miuix UI 重构基础）
+    // Kotlin（新 UI 全部为 View 体系，无 Compose 依赖）
     implementation "org.jetbrains.kotlin:kotlin-stdlib:2.4.0"
-    implementation "androidx.activity:activity-compose:1.9.3"
-    implementation "top.yukonga.miuix.kmp:miuix-ui:0.9.3"
-    implementation "top.yukonga.miuix.kmp:miuix-preference:0.9.3"
-    implementation "androidx.compose.material:material-icons-extended:1.7.6"
 }

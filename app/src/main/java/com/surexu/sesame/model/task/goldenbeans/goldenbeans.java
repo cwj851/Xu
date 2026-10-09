@@ -2,14 +2,17 @@ package com.surexu.sesame.model.task.goldenbeans;
 
 import org.json.JSONObject;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 
 import com.surexu.sesame.data.ModelFields;
 import com.surexu.sesame.data.ModelGroup;
 import com.surexu.sesame.data.modelFieldExt.BooleanModelField;
 import com.surexu.sesame.data.modelFieldExt.IntegerModelField;
+import com.surexu.sesame.data.modelFieldExt.SelectAndCountModelField;
 import com.surexu.sesame.data.modelFieldExt.SelectModelField;
 import com.surexu.sesame.data.task.ModelTask;
+import com.surexu.sesame.entity.AlipayGoldenBeansMallItem;
 import com.surexu.sesame.entity.AlipayGoldenBeansTaskList;
 import com.surexu.sesame.model.base.TaskCommon;
 import com.surexu.sesame.util.Log;
@@ -43,6 +46,8 @@ public class goldenbeans extends ModelTask {
     private BooleanModelField goldenBeansAutoSesameExchange;
     private IntegerModelField goldenBeansSesameExchangeLimit;
     private IntegerModelField executeInterval;
+    private BooleanModelField goldenBeansMallExchange;
+    private SelectAndCountModelField GoldenBeansMallItemList;
 
     @Override
     public String getName() {
@@ -70,6 +75,8 @@ public class goldenbeans extends ModelTask {
         modelFields.addField(goldenBeansAutoSesameExchange = new BooleanModelField("goldenBeansAutoSesameExchange", "金豆夺宝 | 自动芝麻粒换豆", false));
         modelFields.addField(goldenBeansSesameExchangeLimit = new IntegerModelField("goldenBeansSesameExchangeLimit", "金豆夺宝 | 芝麻粒换豆单日上限(0不限)", 0, 0, null).setDependsOn("goldenBeansAutoSesameExchange"));
         modelFields.addField(executeInterval = new IntegerModelField("executeInterval", "操作间隔(毫秒)", 500, 500, null));
+        modelFields.addField(goldenBeansMallExchange = new BooleanModelField("goldenBeansMallExchange", "金豆夺宝 | 商城兑换权益", false));
+        modelFields.addField(GoldenBeansMallItemList = new SelectAndCountModelField("GoldenBeansMallItemList", "金豆夺宝 | 商城可兑列表", new LinkedHashMap<>(), AlipayGoldenBeansMallItem::getList, "请填写每日兑换次数(0为不限)", 0, 99).setDependsOn("goldenBeansMallExchange"));
         return modelFields;
     }
 
@@ -95,9 +102,10 @@ public class goldenbeans extends ModelTask {
             boolean resyncEnabled = GoldenBeansSupport.enabled(goldenBeansCollectReward);
             boolean manureEnabled = GoldenBeansSupport.enabled(goldenBeansAutoManureExchange);
             boolean sesameEnabled = GoldenBeansSupport.enabled(goldenBeansAutoSesameExchange);
+            boolean mallEnabled = GoldenBeansSupport.enabled(goldenBeansMallExchange);
 
             if (!signEnabled && !popupEnabled && !taskEnabled && !gameEnabled
-                    && !mineEnabled && !resyncEnabled && !manureEnabled && !sesameEnabled) {
+                    && !mineEnabled && !resyncEnabled && !manureEnabled && !sesameEnabled && !mallEnabled) {
                 Log.record("金豆夺宝功能未开启#本轮跳过");
                 return;
             }
@@ -136,6 +144,9 @@ public class goldenbeans extends ModelTask {
             if (sesameEnabled) {
                 GoldenBeansExchange.exchangeSesame(interval, dailyLimit(goldenBeansSesameExchangeLimit));
             }
+
+            // 商城可兑列表无条件同步（供配置页勾选），兑换才受开关控制
+            GoldenBeansMall.run(interval, GoldenBeansMallItemList.getValue(), mallEnabled);
 
             if (resyncEnabled) {
                 resync(interval);

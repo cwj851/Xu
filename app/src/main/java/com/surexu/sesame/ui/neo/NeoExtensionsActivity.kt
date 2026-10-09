@@ -28,7 +28,7 @@ import java.io.File
 
 /**
  * 「服务」→「扩展功能」二级页：森林查询 / 自定义走路路径 / 自动切号 / 清空光盘行动图片。
- * 与模块版 MiuixExtensionsActivity 功能对齐：查询类通过广播向支付宝模块发 RPC 请求。
+ * 与旧版模块 UI 的扩展功能页功能对齐：查询类通过广播向支付宝模块发 RPC 请求。
  */
 class NeoExtensionsActivity : AppCompatActivity() {
 
@@ -37,6 +37,7 @@ class NeoExtensionsActivity : AppCompatActivity() {
     private var activation = 0L
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         super.attachBaseContext(LanguageUtil.setLocal(newBase))
     }
 
@@ -57,8 +58,8 @@ class NeoExtensionsActivity : AppCompatActivity() {
         window.statusBarColor = getColor(R.color.neo_base)
         window.navigationBarColor = getColor(R.color.neo_base)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = !ThemeUtil.isNightActive(window.decorView.context)
+            isAppearanceLightNavigationBars = !ThemeUtil.isNightActive(window.decorView.context)
         }
     }
 

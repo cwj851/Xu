@@ -12,12 +12,10 @@ buildscript {
     ext {
         kotlinVersion = '2.4.0'
         agpVersion = '9.2.1'
-        composeVersion = '1.11.1'
     }
     dependencies {
         classpath "com.android.tools.build:gradle:${agpVersion}"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}"
-        classpath "org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersion}"
     }
 }
 

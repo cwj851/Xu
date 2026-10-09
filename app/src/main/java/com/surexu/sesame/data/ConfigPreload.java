@@ -18,8 +18,12 @@ import com.surexu.sesame.util.idMap.BeachIdMap;
 import com.surexu.sesame.util.idMap.CooperationIdMap;
 import com.surexu.sesame.util.idMap.FarmOrnamentsIdMap;
 import com.surexu.sesame.util.idMap.GameCenterMallItemMap;
+import com.surexu.sesame.entity.AlipayGoldenBeansMallItem;
+import com.surexu.sesame.entity.AlipayWelfareFundTaskList;
+import com.surexu.sesame.util.idMap.GoldenBeansMallItemMap;
 import com.surexu.sesame.util.idMap.GoldenBeansTaskListMap;
 import com.surexu.sesame.util.idMap.MarathonIdMap;
+import com.surexu.sesame.util.idMap.WelfareFundTaskListMap;
 import com.surexu.sesame.util.idMap.MemberBenefitIdMap;
 import com.surexu.sesame.util.idMap.MemberCreditSesameTaskListMap;
 import com.surexu.sesame.util.idMap.MonopolyTaskListMap;
@@ -36,7 +40,7 @@ import com.surexu.sesame.util.idMap.rpcRequestMap;
 
 /**
  * 配置相关的预加载逻辑（原 SettingsActivity / NewSettingsActivity 中的初始化）。
- * miuix Compose 界面复用同一套数据，必须在这里完成 IdMap 加载与 ConfigV2.load，
+ * 新 UI 界面复用同一套数据，必须在这里完成 IdMap 加载与 ConfigV2.load，
  * 否则 SELECT_ONE / SELECT 等字段的选项列表为空。
  */
 public final class ConfigPreload {
@@ -80,6 +84,11 @@ public final class ConfigPreload {
         PathThemeMapListMap.load();
         AntMemberTaskListMap.load();
         GoldenBeansTaskListMap.load();
+        GoldenBeansMallItemMap.load();
+        // 候选实体的静态缓存是注入进程写的，App 进程必须清一次才会重建
+        AlipayGoldenBeansMallItem.clear();
+        WelfareFundTaskListMap.load();
+        AlipayWelfareFundTaskList.clear();
         MonopolyTaskListMap.load();
         // 同一账号的配置只加载一次：二级/三级/四级配置页的 onCreate 都会调用 prepare，
         // 若每次都 ConfigV2.load，磁盘值会把内存中尚未保存的修改整体覆盖，

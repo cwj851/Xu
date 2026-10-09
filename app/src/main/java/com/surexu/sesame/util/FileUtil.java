@@ -562,6 +562,14 @@ public class FileUtil {
     public static File getOrchardChouChouLeTaskListMapFile() {
         return getFile(MAIN_DIRECTORY_FILE, "OrchardChouChouLeTask.json");
     }
+
+    public static File getGoldenBeansMallItemMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "GoldenBeansMallItem.json");
+    }
+
+    public static File getWelfareFundTaskListMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "WelfareFundTask.json");
+    }
     
     /** 自动拉黑记录（含日期），用于"超期自动解禁重试" */
     public static File getAutoBlackListMapFile() {

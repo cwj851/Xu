@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ============ 原创拟态（Neo Neumorphism）夜间色板 ============
+         夜间基面取深雾蓝，阴影转纯黑、高光转浅蓝灰，主色/辅色/强调保持亮色。
+         层次仍由双向光照（左上高光 / 右下阴影）塑造，与浅色版一一对应。 -->
+
+    <!-- 基色 / 光照 -->
+    <color name="neo_base">#0D1320</color>
+    <color name="neo_card">#161E2D</color>
+    <color name="neo_highlight">#232E41</color>
+
+    <!-- 阴影（夜间更暗） -->
+    <color name="neo_shadow">#04070C</color>
+    <color name="neo_shadow_deep">#000000</color>
+
+    <!-- 凹陷面 -->
+    <color name="neo_pressed">#101725</color>
+    <color name="neo_pressed_edge">#0A0F18</color>
+
+    <!-- 主色：霓虹青（保持亮色强调） -->
+    <color name="neo_primary">#00B3A4</color>
+    <color name="neo_primary_deep">#009688</color>
+    <color name="neo_primary_soft">#0E2A28</color>
+
+    <!-- 辅色：电光紫 -->
+    <color name="neo_secondary">#9D8FFF</color>
+    <color name="neo_secondary_soft">#221D3C</color>
+
+    <!-- 强调：琥珀橙 -->
+    <color name="neo_accent">#FFB454</color>
+    <color name="neo_accent_soft">#332A10</color>
+
+    <!-- 文字（浅色高对比） -->
+    <color name="neo_text_primary">#E6EDF5</color>
+    <color name="neo_text_secondary">#A6B3C4</color>
+    <color name="neo_text_hint">#6E7E93</color>
+    <color name="neo_on_primary">#FFFFFF</color>
+
+    <!-- 危险 -->
+    <color name="neo_error">#E5484D</color>
+</resources>

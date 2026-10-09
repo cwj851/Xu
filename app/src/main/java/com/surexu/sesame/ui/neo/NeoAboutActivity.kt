@@ -14,6 +14,7 @@ import com.surexu.sesame.util.LanguageUtil
 class NeoAboutActivity : AppCompatActivity() {
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         super.attachBaseContext(LanguageUtil.setLocal(newBase))
     }
 

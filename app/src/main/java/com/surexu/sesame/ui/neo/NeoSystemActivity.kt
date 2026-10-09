@@ -38,6 +38,7 @@ class NeoSystemActivity : AppCompatActivity() {
 
         const val THEME_SYSTEM = "system"
         const val THEME_LIGHT = "light"
+        const val THEME_DARK = "dark"
 
         val LOG_CATEGORIES = listOf("森林", "庄园", "其他", "记录", "错误", "调试", "运行")
 
@@ -47,6 +48,7 @@ class NeoSystemActivity : AppCompatActivity() {
     private lateinit var uiPrefs: SharedPreferences
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         super.attachBaseContext(LanguageUtil.setLocal(newBase))
     }
 
@@ -68,8 +70,8 @@ class NeoSystemActivity : AppCompatActivity() {
         window.statusBarColor = getColor(R.color.neo_base)
         window.navigationBarColor = getColor(R.color.neo_base)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = !ThemeUtil.isNightActive(window.decorView.context)
+            isAppearanceLightNavigationBars = !ThemeUtil.isNightActive(window.decorView.context)
         }
     }
 
@@ -80,16 +82,23 @@ class NeoSystemActivity : AppCompatActivity() {
         container.removeAllViews()
         val marginPx = dp(12)
 
-        // 主题：跟随系统 / 浅色（对接 AppConfig.followSystem + darkMode）
+        // 主题：跟随系统 / 浅色 / 深色（对接 AppConfig.followSystem + darkMode，选择后立即生效）
         addRow(container, marginPx, "主题", themeSummary(), withSwitch = false) {
-            val current = if (themeIsLight()) 1 else 0
-            showChoiceDialog("主题", arrayOf("跟随系统", "浅色"), current) { index ->
-                AppConfig.INSTANCE.followSystem = index != 1
-                if (index == 1) {
-                    AppConfig.INSTANCE.darkMode = false
+            showChoiceDialog("主题", arrayOf("跟随系统", "浅色", "深色"), themeIndex()) { index ->
+                when (index) {
+                    0 -> AppConfig.INSTANCE.followSystem = true
+                    1 -> {
+                        AppConfig.INSTANCE.followSystem = false
+                        AppConfig.INSTANCE.darkMode = false
+                    }
+                    2 -> {
+                        AppConfig.INSTANCE.followSystem = false
+                        AppConfig.INSTANCE.darkMode = true
+                    }
                 }
                 AppConfig.save()
-                refreshAll()
+                ThemeUtil.applyNightMode()
+                recreate()
             }
         }
 
@@ -179,11 +188,26 @@ class NeoSystemActivity : AppCompatActivity() {
 
     // ==================== 摘要文案 ====================
 
-    private fun themeMode(): String = if (themeIsLight()) THEME_LIGHT else THEME_SYSTEM
+    private fun themeMode(): String = when {
+        themeIsLight() -> THEME_LIGHT
+        AppConfig.INSTANCE.darkMode ?: false -> THEME_DARK
+        else -> THEME_SYSTEM
+    }
+
+    /** 主题在选项数组中的索引：0=跟随系统，1=浅色，2=深色。 */
+    private fun themeIndex(): Int = when {
+        AppConfig.INSTANCE.followSystem ?: true -> 0
+        AppConfig.INSTANCE.darkMode ?: false -> 2
+        else -> 1
+    }
 
     private fun themeIsLight(): Boolean = !(AppConfig.INSTANCE.followSystem ?: true) && !(AppConfig.INSTANCE.darkMode ?: false)
 
-    private fun themeSummary(): String = if (themeIsLight()) "浅色" else "跟随系统"
+    private fun themeSummary(): String = when {
+        themeIsLight() -> "浅色"
+        AppConfig.INSTANCE.darkMode ?: false -> "深色"
+        else -> "跟随系统"
+    }
 
     private fun scaleValue(): Int = uiPrefs.getInt(KEY_UI_SCALE, 100).let { if (it in SCALES) it else 100 }
 

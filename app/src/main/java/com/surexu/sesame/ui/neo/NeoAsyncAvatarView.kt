@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * 原生拟态圆形异步头像控件（View 版，对应 Compose 的 MiuixAsyncAvatar）。
+ * 原生拟态圆形异步头像控件（View 版异步头像）。
  *
  * 用法：布局中直接引用本控件，调用 [load] 传入头像 URL 即自动加载并圆形裁剪；
  * 未加载完成或 URL 为空时保留 XML 中设置的 src（人像占位图标）。
@@ -102,7 +102,7 @@ class NeoAsyncAvatarView @JvmOverloads constructor(
     }
 
     companion object {
-        /** 与模块版 MiuixAsyncImage 同款静态缓存：跨页面复用，避免重复请求头像。 */
+        /** 与旧版模块 UI 同款静态缓存：跨页面复用，避免重复请求头像。 */
         private val avatarCache = HashMap<String, Bitmap>()
 
         private val okHttpClient by lazy {

@@ -1780,7 +1780,7 @@ public class ApplicationHook {
                         }
                         break;
                     case "com.eg.android.AlipayGphone.sesame.memberExchange":
-                        // 模块 UI（MiuixSelectionEditActivity）运行在模块自身进程，没有支付宝宿主环境
+                        // 模块 UI（NeoSelectionEditActivity）运行在模块自身进程，没有支付宝宿主环境
                         // （classLoader/context/rpcBridge 均为 null），不能直接调用 RPC。
                         // 这里在支付宝进程内执行兑换，并把结果通过广播回传给 UI 进程展示。
                         try {

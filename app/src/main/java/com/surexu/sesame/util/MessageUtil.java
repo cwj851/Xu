@@ -298,6 +298,8 @@ public class MessageUtil {
         BLACKLIST_LIST_TARGETS.put("AntSportsTaskList", new String[]{"AntSports", "运动任务"});
         BLACKLIST_LIST_TARGETS.put("AntMemberTaskList", new String[]{"AntMember", "会员任务"});
         BLACKLIST_LIST_TARGETS.put("MemberCreditSesameTaskList", new String[]{"AntMember", "会员芝麻信用任务芝麻粒"});
+        BLACKLIST_LIST_TARGETS.put("OrchardChouChouLeTaskList", new String[]{"AntOrchard", "农场抽抽乐任务"});
+        BLACKLIST_LIST_TARGETS.put("WelfareFundTaskList", new String[]{"AntMember", "福利金任务"});
     }
 
     /**
@@ -318,6 +320,14 @@ public class MessageUtil {
         }
         return CODE_UNSUPPORTED_RPC.equals(jo.optString("code", "").trim())
                 || CODE_UNSUPPORTED_RPC.equals(jo.optString("errorCode", "").trim());
+    }
+
+    /**
+     * 按列表字段名反查拉黑目标 {模块名, 列表中文名}；未登记的列表返回 null。
+     * <p>供模块外的通用逻辑（如 {@code TaskAttemptPolicy}）在判定"该任务做不了"时按规则记账。
+     */
+    public static String[] autoBlackListTarget(String listField) {
+        return BLACKLIST_LIST_TARGETS.get(listField);
     }
 
     public static void checkResultCodeAndMarkTaskBlackList(String listTitle, String taskTitle, JSONObject jo) {
@@ -386,6 +396,14 @@ public class MessageUtil {
                             || anyFieldContains(jo, "不是有效的入参")
                             || anyFieldContains(jo, "存在进行中的生活记录")
                             || anyFieldContains(jo, "生活记录模板不存在");
+                    break;
+
+                // 福利金任务：事件规则任务被 10000005「不允许完成事件规则任务」拒绝，文案里没有
+                // 「不支持rpc调用」关键字，须按错误码单独接入连续确认，不能靠 strongHit
+                case "WelfareFundTaskList":
+                    needConfirm = weakHit
+                            || "10000005".equals(jo.optString("errorCode", "").trim())
+                            || anyFieldContains(jo, "不允许完成事件规则任务");
                     break;
 
                 // 金豆夺宝任务：错误码/文案（code 或 resultCode 或 errorCode + desc/resultDesc/memo）

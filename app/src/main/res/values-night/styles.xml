@@ -1,29 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- 未来拟态纯白：窗口底色与状态栏/导航栏统一为纯白，避免启动白闪与色块割裂；
-         使用 DayNight 以便夜间模式自动切换 values-night 配色 -->
+    <!-- 夜间覆盖：完整继承父主题并切换栏图标为浅色（与 values 版一一对应，仅改栏图标/副标题色） -->
     <style name="AppTheme" parent="@style/Theme.AppCompat.DayNight">
         <!--Appbar背景色-->
         <item name="colorPrimary">@color/colorPrimary</item>
         <!--ToolBar上的Title颜色-->
         <item name="titleTextColor">@color/textColorPrimary</item>
-        <item name="subtitleTextColor">#535E73</item>
+        <item name="subtitleTextColor">#A6B3C4</item>
         <item name="android:windowBackground">@color/background</item>
         <item name="android:colorBackground">@color/background</item>
         <item name="android:navigationBarColor">@color/background</item>
         <item name="android:statusBarColor">@color/background</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="windowNoTitle">true</item>
     </style>
 
-    <style name="MenuTheme">
-        <item name="android:textColorSecondary">@color/textColorPrimary</item>
-        <item name="android:colorBackground">@color/background</item>
-    </style>
-
-    <!-- 桌宠对话窗：悬浮窗点击后弹出的全屏透明 Activity，内部用 Compose 绘制浮起卡片 -->
+    <!-- 桌宠对话窗：夜间沿用全透明窗口，栏图标切浅色 -->
     <style name="PetDialogTheme" parent="@style/Theme.AppCompat.DayNight">
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:colorBackground">@android:color/transparent</item>
@@ -34,7 +28,7 @@
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

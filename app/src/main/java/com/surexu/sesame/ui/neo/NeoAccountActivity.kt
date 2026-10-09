@@ -32,6 +32,7 @@ class NeoAccountActivity : AppCompatActivity() {
     private var selectedUserId: String? = null
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         super.attachBaseContext(LanguageUtil.setLocal(newBase))
     }
 

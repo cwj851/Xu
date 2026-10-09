@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import com.surexu.sesame.R
 import com.surexu.sesame.entity.FriendWatch
+import com.surexu.sesame.util.FileUtil
 import com.surexu.sesame.util.LanguageUtil
 
 /**
@@ -20,6 +21,7 @@ import com.surexu.sesame.util.LanguageUtil
 class NeoFriendStatsActivity : AppCompatActivity() {
 
     override fun attachBaseContext(newBase: Context) {
+        ThemeUtil.applyNightMode()
         super.attachBaseContext(LanguageUtil.setLocal(newBase))
     }
 
@@ -29,8 +31,8 @@ class NeoFriendStatsActivity : AppCompatActivity() {
         window.statusBarColor = getColor(R.color.neo_base)
         window.navigationBarColor = getColor(R.color.neo_base)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = !ThemeUtil.isNightActive(window.decorView.context)
+            isAppearanceLightNavigationBars = !ThemeUtil.isNightActive(window.decorView.context)
         }
 
         findViewById<View>(R.id.neo_friend_stats_back_btn).setOnClickListener { finish() }
@@ -46,11 +48,20 @@ class NeoFriendStatsActivity : AppCompatActivity() {
 
         if (friends.isEmpty()) {
             val empty = TextView(this).apply {
-                text = "(空)"
-                textSize = 14f
+                text = buildString {
+                    append("(空)\n")
+                    append("诊断:\n")
+                    append("目录: ").append(FileUtil.MAIN_DIRECTORY_FILE.absolutePath).append("\n")
+                    val fwFile = FileUtil.getFriendWatchFile()
+                    append("文件: ").append(fwFile.absolutePath).append("\n")
+                    append("存在: ").append(fwFile.exists()).append(" 大小: ").append(if (fwFile.exists()) fwFile.length() else 0).append("\n")
+                    append("可读: ").append(fwFile.canRead()).append("\n")
+                    append("内容: ").append(FileUtil.readFromFile(fwFile).take(120))
+                }
+                textSize = 13f
                 setTextColor(getColor(R.color.neo_text_hint))
-                gravity = android.view.Gravity.CENTER
-                setPadding(0, dp(32), 0, dp(32))
+                gravity = android.view.Gravity.START
+                setPadding(dp(4), dp(16), dp(4), dp(16))
             }
             container.addView(empty)
             return
