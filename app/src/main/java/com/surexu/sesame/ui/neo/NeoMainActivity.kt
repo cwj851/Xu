@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
@@ -38,6 +39,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.surexu.sesame.R
+import com.surexu.sesame.util.PermissionUtil
 import com.surexu.sesame.data.AppConfig
 import com.surexu.sesame.data.ConfigV2
 import com.surexu.sesame.data.ModelGroup
@@ -121,6 +123,10 @@ class NeoMainActivity : AppCompatActivity() {
 
     private val REQUEST_IMPORT_BACKUP = 1001
     private val REQUEST_EXPORT_BACKUP = 1002
+    private val REQUEST_NOTIFICATIONS = 1003
+
+    /** 主界面是否处于前台：后台/二级页停留时不改账号选择，防止配置页保存串写账号 */
+    private var resumed = false
 
     /** 立即备份选择位置保存时暂存待写入的配置内容。 */
     private var pendingBackupJson: String? = null
@@ -195,6 +201,22 @@ class NeoMainActivity : AppCompatActivity() {
 
         switchPage(0)
         applyFloatNav()
+
+        // 首次进入请求文件权限：桌面入口是拟态新 UI，旧版只在 MiuixMainActivity 里申请，
+        // 新用户从新 UI 进入时不再弹授权，这里补上
+        if (!PermissionUtil.checkFilePermissions(this)) {
+            PermissionUtil.checkOrRequestFilePermissions(this)
+        }
+        // Android 13+ 通知权限：manifest 已声明，首次进入一并请求
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+            if (granted != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    REQUEST_NOTIFICATIONS
+                )
+            }
+        }
     }
 
     override fun onResume() {
@@ -219,6 +241,7 @@ class NeoMainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        resumed = false
         // 离开前台即停止状态轮询，避免后台无谓广播与泄漏（与模块版一致）
         runTypeProbeHandler.removeCallbacks(runTypeProbeRunnable)
         // 离开前台停止能量统计定时刷新
@@ -407,8 +430,22 @@ class NeoMainActivity : AppCompatActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 "com.surexu.sesame.status" -> {
-                    // 模块已被 LSPosed 启用并注入支付宝，回包即标记已激活并停止轮询（与模块版一致）
-                    ViewAppInfo.setRunTypeByCode(RunType.MODEL.getCode())
+                    // 兼容两套回包：新版带 runType extra（禁用=0/激活=1），旧版无 extra 默认视为已激活
+                    val code = intent.getIntExtra("runType", -1)
+                    if (code >= 0) {
+                        ViewAppInfo.setRunTypeByCode(code)
+                    } else {
+                        ViewAppInfo.setRunTypeByCode(RunType.MODEL.getCode())
+                    }
+                    // 配置跟随支付宝当前登录账号：仅主界面在前台时才同步 uid（覆盖本地旧值）。
+                    // 后台或停留在二级页（账号切换、配置编辑）时不改账号选择，防止配置页保存时把账号串写成另一账号
+                    if (code == RunType.MODEL.getCode() && resumed) {
+                        val uid = intent.getStringExtra("uid")
+                        if (!uid.isNullOrEmpty() && uid != restoreSelectedAccount()) {
+                            uiPrefs.edit().putString(KEY_LAST_SELECTED_USER, uid).apply()
+                            refreshSettingsAccountButton()
+                        }
+                    }
                     runTypeProbeTimes = 0
                     runTypeProbeHandler.removeCallbacks(runTypeProbeRunnable)
                     updateEnergyStatus()
@@ -945,10 +982,6 @@ class NeoMainActivity : AppCompatActivity() {
             card.setOnClickListener {
                 haptic(card)
                 when (setting.name) {
-                    "缓存清理" -> {
-                        clearAppCache()
-                        Toast.makeText(this, "缓存已清理", Toast.LENGTH_SHORT).show()
-                    }
                     "备份与恢复" -> showBackupRestoreDialog()
                     "关于" -> startActivity(Intent(this, NeoAboutActivity::class.java))
                     "系统界面" -> startActivity(Intent(this, NeoSystemActivity::class.java))
@@ -1068,7 +1101,6 @@ class NeoMainActivity : AppCompatActivity() {
             NeoSetting("备份与恢复", R.drawable.ic_neo_backup),
             NeoSetting("关于", R.drawable.ic_neo_about, "Xu v" + appVersionName()),
             NeoSetting("服务器地址", R.drawable.ic_neo_server),
-            NeoSetting("缓存清理", R.drawable.ic_neo_clean, cacheSizeText()),
         )
     }
 
@@ -1076,55 +1108,6 @@ class NeoMainActivity : AppCompatActivity() {
         packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
     } catch (e: Exception) {
         "?"
-    }
-
-    /** 收集可安全清理的缓存文件：仅 App 私有 cache 目录（几十KB级手机缓存）。
-     *  不触碰外部媒体目录 Sure-Xu/ 下的日志、配置、token、备份与账号业务数据。 */
-    private fun cacheFiles(): List<File> {
-        return cacheDir.listFiles()?.toList() ?: emptyList()
-    }
-
-    private fun cacheSizeText(): String {
-        val size = cacheFiles().sumOf { if (it.isDirectory) dirSize(it) else it.length() }
-        return if (size >= 1024L * 1024L) {
-            String.format("%.2fM", size / 1024.0 / 1024.0)
-        } else {
-            String.format("%.0fK", size / 1024.0)
-        }
-    }
-
-    private fun dirSize(dir: java.io.File): Long {
-        if (!dir.exists() || !dir.isDirectory) return 0L
-        var total = 0L
-        dir.listFiles()?.forEach { f ->
-            total += if (f.isDirectory) dirSize(f) else f.length()
-        }
-        return total
-    }
-
-    private fun clearAppCache() {
-        try {
-            // 仅清理 App 私有 cache 目录（几十KB级手机缓存），保留外部媒体目录中的日志/配置/账号等业务数据
-            cacheFiles().forEach { it.deleteRecursively() }
-            updateCacheSizeSub()
-        } catch (e: Exception) {
-            // 忽略清理失败
-        }
-    }
-
-    /** 清理后刷新「缓存清理」行的副标题显示。 */
-    private fun updateCacheSizeSub() {
-        val list = findViewById<LinearLayout>(R.id.neo_setting_list) ?: return
-        for (i in 0 until list.childCount) {
-            val card = list.getChildAt(i)
-            val name = card.findViewById<TextView>(R.id.neo_setting_name)?.text?.toString()
-            if (name == "缓存清理") {
-                val sub = card.findViewById<TextView>(R.id.neo_setting_sub)
-                sub.text = cacheSizeText()
-                sub.visibility = View.VISIBLE
-                break
-            }
-        }
     }
 
     /** 备份与恢复主弹窗：立即备份 / 从备份恢复 / 从文件导入 / 清除备份。 */

@@ -3,6 +3,7 @@ package com.surexu.sesame.model.task.antMember;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import com.surexu.sesame.data.Model;
 import com.surexu.sesame.data.task.ModelTask;
 import com.surexu.sesame.hook.ApplicationHook;
 import com.surexu.sesame.util.Log;
@@ -840,6 +841,22 @@ public class AntMemberExchange {
         } catch (Throwable t) {
             Log.err(TAG, "executeSecKill err:", t);
         }
+        rescheduleSecKill();
+    }
+
+    /** 当前整点执行完后，重排下一个秒杀时间点（支持多时间点如 10:00,20:00）。 */
+    private static void rescheduleSecKill() {
+        try {
+            AntMember member = Model.getModel(AntMember.class);
+            if (member == null) {
+                return;
+            }
+            String times = member.getMemberPointExchangeSecKillTimes().getValue();
+            boolean enabled = member.getMemberPointExchangeSecKill().getValue();
+            scheduleSecKill(member, times, enabled);
+        } catch (Throwable t) {
+            Log.err(TAG, "rescheduleSecKill err:", t);
+        }
     }
 
     /**
@@ -854,6 +871,32 @@ public class AntMemberExchange {
                 return;
             }
             int done = 0;
+            // 额外兑换名单：秒杀到点优先抢用户勾选的权益（按名称）
+            AntMember member = Model.getModel(AntMember.class);
+            if (member != null) {
+                String custom = member.getMemberPointExchangeCustom().getValue();
+                if (custom != null && !custom.trim().isEmpty()) {
+                    String[] names = custom.split("[,，;；]");
+                    for (String n : names) {
+                        String name = n.trim();
+                        if (name.isEmpty()) {
+                            continue;
+                        }
+                        String benefitId = MemberBenefitIdMap.getBenefitId(name);
+                        if (benefitId == null) {
+                            benefitId = MemberBenefitIdMap.searchBenefitByKeyword(name);
+                        }
+                        if (benefitId != null && !Status.canMemberPointExchangeBenefitToday(benefitId)) {
+                            continue;
+                        }
+                        int consumed = exchangeSingleTarget(name, pointBalance, 300);
+                        if (consumed > 0) {
+                            pointBalance -= consumed;
+                            done++;
+                        }
+                    }
+                }
+            }
             for (String benefitId : MemberBenefitIdMap.getMap().keySet()) {
                 String grabHour = MemberBenefitIdMap.getGrabHour(benefitId);
                 if (grabHour.isEmpty() || "-1".equals(grabHour)) {

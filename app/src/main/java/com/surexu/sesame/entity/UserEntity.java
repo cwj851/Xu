@@ -80,6 +80,14 @@ public class UserEntity {
         return showName;
     }
 
+    public String getUserId() {
+        return userId;
+    }
+
+    public Integer getFriendStatus() {
+        return friendStatus;
+    }
+
     public String getAccount() {
         return account;
     }

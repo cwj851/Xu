@@ -68,6 +68,11 @@ class NeoServiceActivity : AppCompatActivity() {
             startActivity(Intent(this, NeoFriendStatsActivity::class.java))
         }
 
+        // 单删好友：勾选单向好友并删除（删除走广播到支付宝进程执行 RPC）
+        addRow(container, marginPx, "单删好友", "检测并删除单向好友（对方删了你的）", withSwitch = false) {
+            startActivity(Intent(this, NeoFriendManageActivity::class.java))
+        }
+
         // 扩展功能：森林查询 / 自定义走路路径 / 自动切号等
         addRow(container, marginPx, "扩展功能", "森林查询、走路路径、自动切号等", withSwitch = false) {
             startActivity(Intent(this, NeoExtensionsActivity::class.java))

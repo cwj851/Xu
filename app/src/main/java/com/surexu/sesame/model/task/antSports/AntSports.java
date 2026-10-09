@@ -366,9 +366,10 @@ public class AntSports extends ModelTask {
         }
     }
 
-    private void initWalkPathThemeMap() {
+    private boolean initWalkPathThemeMap() {
         //初始化PathThemeMapListMap
         PathThemeMapListMap.load();
+        boolean synced = false;
         try {
             String result = AntSportsRpcCall.queryThemeList();
             JSONObject jo = new JSONObject(result);
@@ -382,6 +383,7 @@ public class AntSports extends ModelTask {
                         String themeName = theme.optString("themeName");
                         if (themeId != null && !themeId.isEmpty() && themeName != null && !themeName.isEmpty()) {
                             PathThemeMapListMap.add(themeId, themeName);
+                            synced = true;
                         }
                     }
                 }
@@ -392,7 +394,9 @@ public class AntSports extends ModelTask {
         } catch (Throwable t) {
             Log.err(TAG, "initWalkPathThemeMap err:", t);
         }
-
+        // 同步到主题数据才算成功；失败（RPC 异常/空结果）返回 false，
+        // 调用方不会打当日标记，下次运行继续重试，避免当天主题永远获取不到
+        return synced;
     }
 
     // 运动

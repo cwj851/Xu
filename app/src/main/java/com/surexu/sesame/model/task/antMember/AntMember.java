@@ -97,6 +97,21 @@ public class AntMember extends ModelTask {
     private BooleanModelField insBeanExchangeGoldenTicket;
     private BooleanModelField insGainSumInsured;
 
+    /** 额外兑换名单（整点秒杀到点自动抢的目标） */
+    public StringModelField getMemberPointExchangeCustom() {
+        return memberPointExchangeCustom;
+    }
+
+    /** 整点秒杀开关 */
+    public BooleanModelField getMemberPointExchangeSecKill() {
+        return memberPointExchangeSecKill;
+    }
+
+    /** 秒杀时间点（逗号分隔 HH:mm） */
+    public StringModelField getMemberPointExchangeSecKillTimes() {
+        return memberPointExchangeSecKillTimes;
+    }
+
     @Override
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();

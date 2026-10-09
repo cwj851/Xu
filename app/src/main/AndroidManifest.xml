@@ -75,6 +75,11 @@
             android:resizeableActivity="true" />
 
         <activity
+            android:name=".ui.neo.NeoFriendManageActivity"
+            android:exported="false"
+            android:resizeableActivity="true" />
+
+        <activity
             android:name=".ui.neo.NeoExtensionsActivity"
             android:exported="false"
             android:resizeableActivity="true" />

@@ -25,6 +25,11 @@ import com.surexu.sesame.util.compat.XC_MethodHook;
 import com.surexu.sesame.util.XHelpers;
 import com.surexu.sesame.util.compat.XC_LoadPackage;
 
+import com.surexu.sesame.model.task.friendManage.FriendManageRpcCall;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -69,6 +74,7 @@ import com.surexu.sesame.rpc.intervallimit.RpcIntervalLimit;
 import com.surexu.sesame.util.ClassUtil;
 import com.surexu.sesame.util.FileUtil;
 import com.surexu.sesame.util.Log;
+import com.surexu.sesame.util.MessageUtil;
 import com.surexu.sesame.util.NotificationUtil;
 import com.surexu.sesame.util.PermissionUtil;
 import com.surexu.sesame.util.Statistics;
@@ -1817,6 +1823,84 @@ public class ApplicationHook {
                             Log.err(TAG, "sesame memberExchange dispatch err:", th);
                         }
                         break;
+                    case "com.eg.android.AlipayGphone.sesame.friendManage":
+                        // 模块 UI（NeoServiceActivity）运行在模块自身进程，没有支付宝宿主环境，
+                        // 不能直接调用 RPC。这里在支付宝进程内执行 handleFriendship 删除，
+                        // 并把结果通过广播回传给 UI 进程展示。
+                        try {
+                            String fmType = intent.getStringExtra("type");
+                            if ("delete".equals(fmType)) {
+                                String fmRequestId = intent.getStringExtra("requestId");
+                                String userIdsJson = intent.getStringExtra("userIds");
+                                BroadcastReceiver.PendingResult r4 = goAsync();
+                                new Thread(() -> {
+                                    try {
+                                        JSONArray fmArr = new JSONArray(userIdsJson);
+                                        StringBuilder fmSb = new StringBuilder();
+                                        int fmOk = 0;
+                                        int fmFail = 0;
+                                        for (int i = 0; i < fmArr.length(); i++) {
+                                            JSONObject item = fmArr.getJSONObject(i);
+                                            String fmUserId = item.optString("userId");
+                                            String account = item.optString("account", "");
+                                            String name = item.optString("name", fmUserId);
+                                            try {
+                                                String res = FriendManageRpcCall.handleFriendship(fmUserId, account);
+                                                JSONObject jo = new JSONObject(res);
+                                                boolean ok = MessageUtil.checkResultCode(TAG, jo);
+                                                if (!ok) {
+                                                    if (jo.optBoolean("success")) ok = true;
+                                                    if (!ok) {
+                                                        Object rcObj = jo.opt("resultCode");
+                                                        if (rcObj instanceof Number && ((Number) rcObj).intValue() == 100) ok = true;
+                                                        else if (rcObj instanceof String && "100".equals(rcObj)) ok = true;
+                                                    }
+                                                    if (!ok) {
+                                                        Object errObj = jo.opt("error");
+                                                        if (errObj instanceof Number && ((Number) errObj).intValue() == 100) ok = true;
+                                                        else if (errObj instanceof String && "100".equals(errObj)) ok = true;
+                                                    }
+                                                }
+                                                if (ok) {
+                                                    fmOk++;
+                                                    fmSb.append("✅ ").append(name).append("\n");
+                                                    Log.other("好友管理👋删除成功[" + name + "]#userId=" + fmUserId);
+                                                } else {
+                                                    fmFail++;
+                                                    String err = jo.optString("error", jo.optString("resultCode", "?"));
+                                                    String msg = jo.optString("errorMessage", jo.optString("resultDesc", ""));
+                                                    fmSb.append("❌ ").append(name).append(": ").append(err).append(" ").append(msg).append("\n");
+                                                    Log.record("好友管理👋删除失败[" + name + "]#" + err + " " + msg);
+                                                }
+                                            } catch (Throwable t) {
+                                                fmFail++;
+                                                fmSb.append("❌ ").append(name).append(": ").append(t.getMessage()).append("\n");
+                                            }
+                                            Thread.sleep(500 + (long) (Math.random() * 500));
+                                        }
+                                        Intent fmReply = new Intent("com.surexu.sesame.friendManageResult");
+                                        fmReply.putExtra("requestId", fmRequestId);
+                                        fmReply.putExtra("result", "删除完成: 成功=" + fmOk + ", 失败=" + fmFail);
+                                        fmReply.putExtra("detail", fmSb.toString().trim());
+                                        context.sendBroadcast(fmReply);
+                                        Log.record("好友管理👋删除完成: 成功=" + fmOk + " # 失败=" + fmFail + " # 总计=" + fmArr.length());
+                                    } catch (Throwable th) {
+                                        Log.err(TAG, "sesame friendManage err:", th);
+                                        try {
+                                            Intent fmReply = new Intent("com.surexu.sesame.friendManageResult");
+                                            fmReply.putExtra("requestId", fmRequestId);
+                                            fmReply.putExtra("result", "删除异常: " + th.getMessage());
+                                            context.sendBroadcast(fmReply);
+                                        } catch (Throwable ignored) {
+                                        }
+                                    }
+                                    r4.finish();
+                                }, "Sesame-FriendManage").start();
+                            }
+                        } catch (Throwable th) {
+                            Log.err(TAG, "sesame friendManage dispatch err:", th);
+                        }
+                        break;
                 }
             }
         }
@@ -1893,6 +1977,7 @@ public class ApplicationHook {
             intentFilter.addAction("com.eg.android.AlipayGphone.sesame.rpctest");
             intentFilter.addAction("com.eg.android.AlipayGphone.sesame.reloadConfig");
             intentFilter.addAction("com.eg.android.AlipayGphone.sesame.memberExchange");
+            intentFilter.addAction("com.eg.android.AlipayGphone.sesame.friendManage");
 
             broadcastReceiver = new AlipayBroadcastReceiver();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

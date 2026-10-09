@@ -33,6 +33,7 @@ import com.surexu.sesame.data.ModelGroup
 import com.surexu.sesame.data.modelFieldExt.ChoiceModelField
 import com.surexu.sesame.data.modelFieldExt.EmptyModelField
 import com.surexu.sesame.data.modelFieldExt.IntegerModelField
+import com.surexu.sesame.entity.MemberBenefit
 import com.surexu.sesame.ui.neo.NeoSelectionEditActivity
 import com.surexu.sesame.util.LanguageUtil
 
@@ -310,15 +311,23 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
                 statusView.visibility = View.GONE
                 summaryView.text = field.configValue
                 row.setOnClickListener {
-                    showEditDialog(
-                        title = field.name ?: "",
-                        initial = field.configValue ?: "",
-                        inputType = InputType.TYPE_CLASS_TEXT,
-                        multiLine = field.type == "TEXT",
-                    ) { input ->
-                        field.setConfigValue(input)
-                        summaryView.text = field.configValue
-                        modified = true
+                    if (field.code == "memberPointExchangeCustom") {
+                        showCustomExchangeDialog(field.name ?: "", field.configValue ?: "") { input ->
+                            field.setConfigValue(input)
+                            summaryView.text = field.configValue
+                            modified = true
+                        }
+                    } else {
+                        showEditDialog(
+                            title = field.name ?: "",
+                            initial = field.configValue ?: "",
+                            inputType = InputType.TYPE_CLASS_TEXT,
+                            multiLine = field.type == "TEXT",
+                        ) { input ->
+                            field.setConfigValue(input)
+                            summaryView.text = field.configValue
+                            modified = true
+                        }
                     }
                 }
             }
@@ -484,6 +493,119 @@ class NeoGroupFieldsActivity : AppCompatActivity() {
             }
         }
         return row
+    }
+
+    /** 额外兑换增强弹窗：输入框 + 权益库候选列表（输入实时过滤，点选追加名称，仍可手动输入）。 */
+    private fun showCustomExchangeDialog(title: String, initial: String, onOk: (String) -> Unit) {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.neo_dialog_field_edit)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.setCanceledOnTouchOutside(true)
+        val width = resources.displayMetrics.widthPixels - dp(64)
+        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+        dialog.findViewById<TextView>(R.id.neo_edit_title).text = title
+
+        val content = dialog.findViewById<FrameLayout>(R.id.neo_edit_content)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val edit = EditText(this).apply {
+            setText(initial)
+            setTextColor(ContextCompat.getColor(this@NeoGroupFieldsActivity, R.color.neo_text_primary))
+            setTextSize(14f)
+            setBackgroundResource(R.drawable.neu_input_bg)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            inputType = InputType.TYPE_CLASS_TEXT
+            isSingleLine = true
+            hint = "输入权益名称（多个用逗号分隔），或从下方列表选择"
+        }
+        root.addView(
+            edit,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+
+        val listScroll = ScrollView(this).apply {
+            setBackgroundResource(R.drawable.neu_card_raised)
+        }
+        val listContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        listScroll.addView(
+            listContainer,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+        val scrollLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(240))
+        scrollLp.topMargin = dp(12)
+        root.addView(listScroll, scrollLp)
+
+        fun refreshCandidates() {
+            listContainer.removeAllViews()
+            val kw = edit.text?.toString()?.trim() ?: ""
+            val all = MemberBenefit.getList()
+            val candidates = if (kw.isEmpty()) {
+                all
+            } else {
+                all.filter { it.name.contains(kw, ignoreCase = true) }
+            }.take(100)
+            if (candidates.isEmpty()) {
+                val empty = TextView(this@NeoGroupFieldsActivity).apply {
+                    text = if (kw.isEmpty()) "暂无权益数据，先运行一次会员任务抓取后再来" else "无匹配权益：$kw"
+                    setTextColor(ContextCompat.getColor(this@NeoGroupFieldsActivity, R.color.neo_text_hint))
+                    textSize = 13f
+                    setPadding(dp(4), dp(8), dp(4), dp(8))
+                }
+                listContainer.addView(empty)
+                return
+            }
+            candidates.forEach { ben ->
+                val opt = TextView(this@NeoGroupFieldsActivity).apply {
+                    val point = ben.point
+                    text = if (point.isNullOrEmpty()) ben.name else "${ben.name}（${point}积分）"
+                    setTextColor(ContextCompat.getColor(this@NeoGroupFieldsActivity, R.color.neo_text_primary))
+                    textSize = 14f
+                    setPadding(dp(8), dp(9), dp(8), dp(9))
+                    background = ContextCompat.getDrawable(this@NeoGroupFieldsActivity, R.drawable.neu_input_bg)
+                    val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    lp.setMargins(0, 0, 0, dp(6))
+                    layoutParams = lp
+                    setOnClickListener {
+                        val current = edit.text?.toString() ?: ""
+                        val items = current.split("[,，;；]").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                        if (!items.contains(ben.name)) {
+                            items.add(ben.name)
+                            edit.setText(items.joinToString(","))
+                            edit.setSelection(edit.text?.length ?: 0)
+                        }
+                    }
+                }
+                listContainer.addView(opt)
+            }
+        }
+
+        edit.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                refreshCandidates()
+            }
+        })
+        refreshCandidates()
+
+        content.addView(
+            root,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+
+        dialog.findViewById<TextView>(R.id.neo_edit_cancel).setOnClickListener { dialog.dismiss() }
+        dialog.findViewById<TextView>(R.id.neo_edit_ok).setOnClickListener {
+            onOk(edit.text?.toString() ?: "")
+            dialog.dismiss()
+        }
+        dialog.show()
     }
 
     /** 通用文本编辑弹窗：title + EditText + 取消/确定。 */
